@@ -150,6 +150,19 @@ def kanban():
                            interview_types=INTERVIEW_TYPES)
 
 
+# Staging mount for the React rewrite (frontend/). Phase 0 only -- it does not
+# replace "/", "/kanban" or "/insights" yet, which still serve the Jinja
+# templates above. Both routes are needed so a hard refresh on a client-routed
+# path under /app (e.g. /app/kanban) doesn't 404 at Flask. This whole mount,
+# and the matching `basename="/app"` on the React router, is temporary and is
+# expected to be removed route-by-route in Phases 4, 5 and 7 as each view is
+# cut over for real; once all three are cut over, basename goes away entirely.
+@app.route("/app")
+@app.route("/app/<path:_rest>")
+def app_shell(_rest=None):
+    return render_template("app_shell.html")
+
+
 # The list is ordered by date_added DESC, and date_added is not unique, so a
 # cursor carrying only the date cannot say where inside a tied run a page
 # stopped. It carries the whole primary key -- the tie-break the index
@@ -518,6 +531,14 @@ def insights_view():
 def interviews_view():
     """Kept so older bookmarks still land somewhere useful."""
     return redirect("/insights", code=302)
+
+
+@app.route("/api/config")
+def api_config():
+    # Replaces the Jinja tojson injection jobs.html/kanban.html use today --
+    # the React frontend fetches this once instead of getting it baked into
+    # server-rendered HTML.
+    return jsonify({"status_values": STATUS_VALUES, "interview_types": INTERVIEW_TYPES})
 
 
 @app.route("/api/funnel")
