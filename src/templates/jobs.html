@@ -268,8 +268,6 @@
     <button class="linklike" id="filterWeek">This Week</button>
     <button class="linklike" id="filterClearDates">Clear</button>
   </div>
-  <button class="linklike" id="expandAll">Expand all</button>
-  <button class="linklike" id="collapseAll">Collapse all</button>
   <button class="linklike" id="exportCsvBtn">Export CSV</button>
   <button class="primary" id="addJobBtn">+ Add Job</button>
 </div>
@@ -1040,16 +1038,6 @@ document.getElementById('filterClearDates').addEventListener('click', () => {
   document.getElementById('dateTo').value = '';
   renderFromTop();
 });
-document.getElementById('expandAll').addEventListener('click', () => {
-  document.querySelectorAll('tr.detail-row').forEach(r => r.classList.remove('collapsed'));
-  document.querySelectorAll('tr.job-row').forEach(r => r.classList.add('expanded'));
-  refreshMarkdownFields(document);
-});
-document.getElementById('collapseAll').addEventListener('click', () => {
-  document.querySelectorAll('tr.detail-row').forEach(r => r.classList.add('collapsed'));
-  document.querySelectorAll('tr.job-row').forEach(r => r.classList.remove('expanded'));
-});
-
 loadJobs().then(hydrateFunnelFilter);
 </script>
 </body>
