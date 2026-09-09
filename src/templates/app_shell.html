@@ -1,0 +1,28 @@
+<!--
+  Staging shell for the React rewrite (frontend/). Temporary -- see the
+  comment on app_shell() in src/jobs_gui.py. Deliberately dumb: it doesn't
+  read a Vite manifest to resolve hashed filenames. Instead vite.config.ts is
+  configured with fixed, unhashed output filenames
+  (assets/main.js, assets/main.css), so this template can reference them
+  directly via url_for('static', ...) without any build-time lookup.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Tracker</title>
+  <!-- job_views.css stays in src/static/ and is deliberately NOT imported
+       through Vite, so it is not fingerprinted and continues to be shared
+       as-is with the existing Jinja templates. -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='job_views.css') }}">
+  <!-- No dist/assets/main.css yet -- Phase 0's App.tsx imports no CSS, so
+       Vite emits none. Add this link back (assets/main.[extname] is already
+       pinned in vite.config.ts) once a later phase's React code imports a
+       stylesheet. -->
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="{{ url_for('static', filename='dist/assets/main.js') }}"></script>
+</body>
+</html>

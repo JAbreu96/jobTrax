@@ -33,3 +33,7 @@ htmlcov/
 
 # Local data cache (contains personal/contact info)
 data/
+
+# Frontend (frontend/)
+frontend/node_modules/
+src/static/dist/

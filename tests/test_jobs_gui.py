@@ -481,3 +481,36 @@ def test_limit_is_clamped_rather_than_trusted(paged, monkeypatch):
 def test_a_limit_under_the_ceiling_is_left_alone(paged):
     body = paged.get("/api/jobs", query_string={"limit": 2}).get_json()
     assert len(body["jobs"]) == 2
+
+
+def test_api_config_exposes_the_shared_vocabulary(client):
+    """
+    The React frontend fetches this instead of getting status_values /
+    interview_types baked into server-rendered HTML via Jinja's tojson. The
+    point of the identity check is that the endpoint hands back jobs_db's own
+    list rather than a hand-copied duplicate that could drift from it.
+    """
+    body = client.get("/api/config").get_json()
+    assert body["status_values"] == jobs_db.STATUS_ORDER
+    assert body["interview_types"] == jobs_db.INTERVIEW_TYPES
+
+
+def test_app_shell_serves_every_client_routed_path(client):
+    """
+    The React app mounts under /app with a matching router basename, and both
+    the bare route and the <path:_rest> catch-all are needed: without the
+    latter a hard refresh on /app/kanban 404s at Flask before React ever runs.
+
+    Asserting the bundle reference rather than just a 200, because the failure
+    this guards is a shell that renders an empty page -- which is a 200.
+    """
+    for path in ("/app", "/app/kanban", "/app/insights"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        assert "dist/assets/main.js" in resp.get_data(as_text=True), path
+
+
+def test_app_shell_has_not_taken_over_the_jinja_views(client):
+    """Phase 0 is purely additive: /, /kanban and /insights still render Jinja."""
+    for path in ("/", "/kanban", "/insights"):
+        assert "dist/assets/main.js" not in client.get(path).get_data(as_text=True), path
