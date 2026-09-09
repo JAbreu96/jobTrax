@@ -2,13 +2,17 @@
 
 import os
 import re
+import sys
 import argparse
 from datetime import date, datetime, timezone
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from dotenv import load_dotenv
-load_dotenv()
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Also loads .env, by absolute path -- the bare load_dotenv() that used to sit
+# here searched from the cwd, so under cron (which runs from /) it found nothing
+# and reported no error.
+from src import config  # noqa: E402
 
 import anthropic
 import requests
@@ -551,10 +555,12 @@ class JobTrackerAgent:
         return sh.row_values(1)
 
 
-# Hardcoded defaults for quick testing.
+# Defaults for quick testing. The spreadsheet resolves through config rather
+# than a literal, so a fork cannot write into someone else's sheet; it is empty
+# when none is configured, and --spreadsheet overrides it either way.
 DEFAULT_JOB_URL = "https://example.com/job"
-DEFAULT_SPREADSHEET = "https://docs.google.com/spreadsheets/d/1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q/edit"
-DEFAULT_WORKSHEET = "Sheet1"
+DEFAULT_SPREADSHEET = config.SPREADSHEET_URL
+DEFAULT_WORKSHEET = config.SHEET_WORKSHEET
 
 
 def run_agent(arguments: Optional[list] = None) -> None:

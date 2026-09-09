@@ -8,16 +8,19 @@ import sys
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from dotenv import load_dotenv
-load_dotenv()
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Also loads .env, by absolute path. The bare load_dotenv() that used to sit here
+# searched from the cwd, so the scheduled run -- which starts from / -- found
+# nothing and said so nowhere.
+from src import config  # noqa: E402
 
 import gspread
 from gspread.exceptions import WorksheetNotFound
 from google.oauth2.service_account import Credentials
 
 
-DEFAULT_SPREADSHEET = "https://docs.google.com/spreadsheets/d/1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q/edit"
-DEFAULT_WORKSHEET = "Sheet1"
+DEFAULT_SPREADSHEET = config.SPREADSHEET_URL
+DEFAULT_WORKSHEET = config.SHEET_WORKSHEET
 
 # Column indices (0-based) matching current sheet layout
 COL_COMPANY = 0

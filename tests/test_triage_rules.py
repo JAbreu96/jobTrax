@@ -2,9 +2,12 @@
 The mechanical half of the inbox-triage gate.
 
 Every case here is drawn from mail that actually arrived in August 2026, and
-most of them are errors this skill already made once: a task telling Joel to
-reply to a rejection, a task for a thread he had already answered, a task for a
-recruiter who owed *him* the next move.
+most of them are errors this skill already made once: a task telling the owner
+to reply to a rejection, a task for a thread they had already answered, a task
+for a recruiter who owed *them* the next move.
+
+Addresses come from the fixture profile pinned in conftest, not from whatever
+`config/profile.md` is on the machine running this.
 """
 
 from src.triage_rules import (
@@ -12,7 +15,7 @@ from src.triage_rules import (
     contains_ask,
     detect_closing_statement,
     detect_rejection,
-    is_from_joel,
+    is_from_owner,
     normalize_subject,
     strip_html,
     strip_quoted_chain,
@@ -29,12 +32,12 @@ times that work well for me next week:
 Wednesday, August 26: 10:00 AM - 12:00 PM or 2:00 PM - 3:30 PM ET
 
 Best,
-Joelchrist
+Test Owner
 
 On Thu, Aug 20, 2026 at 2:13 PM Liseets Taveras <
 recruiting+433606714-075c5aa6@applytojob.com> wrote:
 
-> Hi Joelchrist,
+> Hi Test Owner,
 >
 > Please respond to this email with a list of dates and times that you would
 > be available for an initial phone interview.
@@ -57,10 +60,19 @@ def test_bracketed_and_foreign_prefixes_are_stripped():
     assert normalize_subject("AW: Front End Role") == "front end role"
 
 
-def test_joel_is_recognised_in_both_inboxes():
-    assert is_from_joel("Joelchrist Abreu <joelchristabreu4044@gmail.com>")
-    assert is_from_joel("<AJOELCRIST@GMAIL.COM>")
-    assert not is_from_joel("Marta Tavanez <marta@ubiminds.com>")
+def test_the_owner_is_recognised_in_both_inboxes():
+    assert is_from_owner("Test Owner <owner@example.test>")
+    assert not is_from_owner("Marta Tavanez <marta@ubiminds.com>")
+
+
+def test_the_match_is_case_insensitive():
+    """Headers arrive in whatever case the sending client used."""
+    assert is_from_owner("<OUTREACH@EXAMPLE.TEST>")
+
+
+def test_a_display_name_alone_does_not_match():
+    """Someone else may share a name; only the address is identity."""
+    assert not is_from_owner("Test Owner <someone.else@recruiter.example>")
 
 
 # ------------------------------------------------------------ quoted chain
@@ -88,8 +100,8 @@ def test_rejection_in_the_quoted_chain_is_not_a_rejection():
     """
     body = """Thanks for clarifying! I'll put you forward for the new opening.
 
-On Mon, Aug 17, 2026 at 9:00 AM Joelchrist Abreu <
-joelchristabreu4044@gmail.com> wrote:
+On Mon, Aug 17, 2026 at 9:00 AM Test Owner <
+outreach@example.test> wrote:
 
 > Understood, thanks for letting me know you are not moving forward with
 > other candidates for that one.
@@ -308,7 +320,7 @@ def test_plain_text_mail_passes_through_undamaged():
     conversation -- damaging it would be worse than not stripping at all.
     """
     inmail = (
-        "Hi Joel,\n\n"
+        "Hi Test Owner,\n\n"
         "I came across your profile and thought you'd be a great fit for a "
         "Senior Frontend Engineer role we're hiring for.\n\n"
         "Would you be open to a quick chat this week?\n\n"

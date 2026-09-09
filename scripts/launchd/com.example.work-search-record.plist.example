@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.work-search-record</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>REPO_PATH/scripts/run-work-search-record.sh</string>
+    </array>
+
+    <!-- Daily at 6pm, not just Sunday. The skill only generates weeks that have
+         closed and have no form yet, so most runs are a silent no-op. Running
+         daily means a laptop that was closed or off simply delays a form
+         instead of skipping the week entirely - launchd fires a missed
+         calendar interval only once, so a Sunday-only schedule could lose a
+         week across a long shutdown. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>18</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>HOME_PATH/Library/Logs/work-search-record/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>HOME_PATH/Library/Logs/work-search-record/launchd.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

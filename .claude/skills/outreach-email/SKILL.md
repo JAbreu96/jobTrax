@@ -1,6 +1,6 @@
 ---
 name: outreach-email
-description: Draft a referral/networking outreach email (Gmail draft) or LinkedIn connection note for a contact at a target company. Supports two modes: email (default) and linkedin. Lead with Joelchrist's Meta experience.
+description: Draft a referral/networking outreach email (Gmail draft) or LinkedIn connection note for a contact at a target company. Supports two modes: email (default) and linkedin. Leads with the sender's strongest recent role from config/profile.md.
 argument-hint: "[contact_name] [contact_email_or_linkedin] [company] [role (optional)] [job_url (optional)] [mode: email|linkedin (optional, default: email)]"
 ---
 
@@ -15,23 +15,26 @@ Parse the arguments:
   - If the user mentions "LinkedIn", "connection request", "connect note", or "LinkedIn note", set mode to `linkedin`
   - Otherwise default to `email`
 
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Its front matter supplies `{owner_name}`,
+`{outreach_email}` and `{linkedin_url}`; its `## Sender background` section
+supplies the role and highlights this email leads with.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill in the sender
+background. Do not invent a work history.
+
 ## Sender background
 
-**Name:** Joelchrist Abreu  
-**Email:** joelchristabreu4044@gmail.com  
-**Current/recent role:** Software Engineer at Meta (NYC), Apr 2025 – Apr 2026 (recently wrapped up)
+Use the profile's `## Sender background` section **verbatim**. Those bullets are
+the user's own claims about their own work: do not embellish them, re-scope
+them, or supplement them from what you happen to know about the companies named.
+An outreach email that overstates a stranger's résumé is worse than one that
+says too little.
 
-**Meta highlights (lead with these):**
-- Shipped a full-stack GraphQL API + React widget for on-demand data exports on Meta's Rights Management platform — drove 5,969 report downloads across 393 accounts and 16 report types
-- Built an internal AI agent tool that auto-traverses the Asset Data Model graph and returns LLM-friendly structured summaries across copyrights, conflicts, and misuses — integrated across five production AI agents
-- Built an interactive asset-relationship graph visualization tool to replace manual ID lookups, improving debuggability for ops and engineers
-- Developed a multi-category dashboard component adopted by 545 accounts; resolved production out-of-memory issues via backend query optimization
-- Drove cross-functional work via 10+ design docs, stakeholder alignment, and structured feedback loops
-- Stack: Hack (PHP), React, JavaScript, Flow (Meta's TypeScript-like type system), MySQL
-
-**Additional background:**
-- Razortooth Communications (Apr 2023–Apr 2024): BLE firmware + mobile QA
-- Strategio (Apr 2022–Jul 2022): AWS EC2 automation, Docker, CI/CD
+Lead with the role under **Current/recent role**; the highlight bullets are
+already in priority order, so take from the top.
 
 ---
 
@@ -59,7 +62,7 @@ Write the email in four sections. Keep the total length to ~160 words — punchy
 - Open with who you are. **Always lead with Meta.** Use past tense — "recently wrapped up a year at Meta."
 - Keep it tight — name, role, and one grounding fact. This is not the place for highlights yet.
 - **Do NOT imply you're job hunting or signal urgency about what's next.** The goal is to open a conversation, not signal need.
-- Example: "My name is Joelchrist — I'm a software engineer who recently wrapped up a year at Meta."
+- Example: "My name is {owner_name} — I'm a software engineer who recently wrapped up a year at Meta."
 
 #### Company hook (1–2 sentences)
 - Transition into what you found about the company: reference the specific thing you researched.
@@ -81,9 +84,9 @@ Write the email in four sections. Keep the total length to ~160 words — punchy
 - Always end with this exact signature block:
   ```
   Thanks,
-  Joelchrist Abreu
-  joelchristabreu4044@gmail.com
-  linkedin.com/in/jc-abreu
+  {owner_name}
+  {outreach_email}
+  {linkedin_url}
   ```
 
 **Subject line:** Keep it short and specific. Do NOT mention Meta or any employer in the subject line. Do NOT use "Referral interest —" as a prefix. Use something like "Quick intro — Software Engineer" or "[Role] at [Company]".

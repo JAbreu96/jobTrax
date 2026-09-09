@@ -41,7 +41,7 @@
       "command": "npx",
       "args": ["-y", "mcp-gsheets@latest"],
       "env": {
-        "GOOGLE_PROJECT_ID": "agents-491602",
+        "GOOGLE_PROJECT_ID": "${GOOGLE_PROJECT_ID}",
         "GOOGLE_APPLICATION_CREDENTIALS": "${HOME}/.config/agents/gcp-service-account.json"
       }
     }
