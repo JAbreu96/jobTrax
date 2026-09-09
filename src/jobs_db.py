@@ -276,6 +276,16 @@ def _ensure_schema(conn, path: Optional[str] = None) -> None:
     _migrate_key(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_company ON jobs (company)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_archived ON jobs (archived)")
+    # The jobs list reads in exactly this order, and idx_archived alone cannot
+    # serve it: filtering on archived still left ORDER BY date_added DESC to a
+    # scan and sort of the whole table on every load. The three key columns
+    # trail date_added because they are the tie-break -- date_added is not
+    # unique, so paging the list needs a total order, and an index that stops at
+    # date_added would seek to the right date and then sort the ties by hand.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_list "
+        "ON jobs (archived, date_added DESC, company, position_title, link)"
+    )
     _ensure_interviews_schema(conn)
     _ensure_recruiters_schema(conn)
     conn.execute(_META_DDL)

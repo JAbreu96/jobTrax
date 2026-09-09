@@ -148,6 +148,30 @@ def test_jobs_migration_is_idempotent(legacy):
     assert len(jobs_db.get_all_jobs()) == 1
 
 
+def test_the_list_order_is_read_from_an_index_not_sorted_by_hand(legacy):
+    """
+    idx_jobs_list is the whole reason the list query got faster, and nothing else
+    would notice if it stopped being used -- the results stay correct, they just
+    cost a scan and a sort of every row. Assert on the plan, because the wrong
+    index still returns the right answer.
+    """
+    path = legacy(JOBS_V1, rows=[("Acme", "2026-01-01", "Engineer", "http://x/1", "Applied")])
+    jobs_db._connect()
+
+    conn = sqlite3.connect(path)
+    cols = ", ".join(jobs_db.LIST_COLUMNS)
+    plan = " ".join(
+        str(r[3]) for r in conn.execute(
+            f"EXPLAIN QUERY PLAN SELECT {cols} FROM jobs WHERE archived = 0 "
+            "ORDER BY date_added DESC, company, position_title, link"
+        ).fetchall()
+    )
+    conn.close()
+
+    assert "idx_jobs_list" in plan, plan
+    assert "TEMP B-TREE" not in plan.upper(), plan
+
+
 # --- interviews: occurred_date became nullable ------------------------------
 
 def test_occurred_date_notnull_is_dropped(legacy):
