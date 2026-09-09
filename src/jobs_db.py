@@ -32,7 +32,18 @@ from dotenv import load_dotenv
 # unset it deliberately, as tests/conftest.py does) still wins.
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=False)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "jobs.db")
+# JOBS_DB points this at a throwaway copy without moving data/jobs.db aside --
+# the demo database the README screenshots are taken against, for one. A
+# relative value resolves from the repo root rather than the cwd, so a cron
+# script and an interactive shell get the same file. Tests monkeypatch this
+# constant directly and are unaffected either way.
+_DB_OVERRIDE = os.environ.get("JOBS_DB", "").strip()
+if not _DB_OVERRIDE:
+    DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "jobs.db")
+elif os.path.isabs(_DB_OVERRIDE):
+    DB_PATH = _DB_OVERRIDE
+else:
+    DB_PATH = os.path.join(os.path.dirname(__file__), "..", _DB_OVERRIDE)
 
 COLUMNS = [
     "company", "position_title", "job_summary", "location", "link",
