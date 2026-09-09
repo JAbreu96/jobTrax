@@ -124,6 +124,7 @@
   }
   @keyframes flash { from { background: #d9f5df; } to { background: transparent; } }
   .empty { color: var(--muted); padding: 40px; text-align: center; }
+  td.sentinel { color: var(--muted); text-align: center; font-size: 12px; }
   .detail-field.notes-field .editable.markdown-rendered:not(.expanded) {
     max-height: 4.2em;
     overflow: hidden;
@@ -358,6 +359,22 @@ let sortState = null;
    run against it -- so a gap has to be visible rather than just quieter. */
 let listIncomplete = false;
 
+/* How much of the filtered result is drawn. Building a row is far and away the
+   expensive part of showing this table -- a thousand jobs is 2000 rows and
+   ~24000 elements, about 400ms of DOM work per render, against ~250ms of
+   database time for the whole list -- so the table draws a window and grows it
+   as the user scrolls. allJobs stays whole underneath it. */
+const RENDER_CHUNK = 50;
+let renderedCount = RENDER_CHUNK;
+
+/* A new result set starts at its top; an update to the one on screen does not.
+   Filter and sort changes call this, while a status edit or an arriving
+   prefetch page calls render() directly and keeps the reader where they are. */
+function renderFromTop() {
+  renderedCount = RENDER_CHUNK;
+  render();
+}
+
 // The field builders live in static/job_fields.js so the kanban modal can use
 // the same ones. Aliased to bare names here because the rest of this file --
 // and the kanban copy it was extracted from -- already calls them that way.
@@ -532,6 +549,13 @@ function render() {
 
   updateGoalBadge();
 
+  // Only a window of the result reaches the DOM. Filtering and sorting above
+  // ran over the whole of allJobs, so this slices a finished list -- a search
+  // still finds a job that has never been rendered, and a sort is a sort of
+  // everything, not of what happens to be on screen.
+  renderedCount = Math.min(Math.max(renderedCount, RENDER_CHUNK), rows.length);
+  const visible = rows.slice(0, renderedCount);
+
   const tbody = document.getElementById('jobsBody');
   // Which rows are open, before the rebuild throws them away. Expanded state
   // lives nowhere but the DOM, so every render used to collapse whatever was
@@ -544,7 +568,7 @@ function render() {
   );
   tbody.innerHTML = '';
 
-  for (const job of rows) {
+  for (const job of visible) {
     const key = rowKey(job);
 
     const mainRow = document.createElement('tr');
@@ -586,6 +610,39 @@ function render() {
     // would leave the row expanded around an empty cell.
     if (reopen.has(key)) toggleRow(mainRow, detailRow, job, detailTd);
   }
+
+  observeSentinel(tbody, rows.length);
+}
+
+/*
+ * Draws the next chunk when the bottom of the table comes into view.
+ *
+ * The sentinel is a row rather than a element after the table because it has to
+ * live inside tbody -- the browser hoists stray elements out of a table -- and
+ * it is rebuilt on every render along with everything else, so the observer is
+ * torn down and re-pointed each time rather than kept alive across renders.
+ */
+let sentinelObserver = null;
+
+function observeSentinel(tbody, total) {
+  if (sentinelObserver) sentinelObserver.disconnect();
+  if (renderedCount >= total) return;
+
+  const row = document.createElement('tr');
+  row.id = 'scrollSentinel';
+  const cell = document.createElement('td');
+  cell.colSpan = 6;
+  cell.className = 'sentinel';
+  cell.textContent = `Loading more… (${renderedCount} of ${total})`;
+  row.appendChild(cell);
+  tbody.appendChild(row);
+
+  sentinelObserver = new IntersectionObserver((entries) => {
+    if (!entries.some(e => e.isIntersecting)) return;
+    renderedCount += RENDER_CHUNK;
+    render();
+  }, { rootMargin: '400px' });   // start drawing before the gap is visible
+  sentinelObserver.observe(row);
 }
 
 async function toggleRow(mainRow, detailRow, job, detailTd) {
@@ -710,7 +767,7 @@ async function hydrateFunnelFilter() {
   if (FUNNEL_FILTER && FUNNEL_FILTER.stage === 'interviewed') {
     const rows = await (await fetch('/api/interviews')).json();
     funnelInterviewedKeys = new Set(rows.map(r => rowKey(r)));
-    render();
+    renderFromTop();
   }
 }
 
@@ -883,7 +940,7 @@ async function submitAddJob() {
       return;
     }
     allJobs.unshift(data);
-    render();
+    renderFromTop();
     closeAddJobModal();
   } catch (err) {
     errorEl.textContent = 'Failed to add job — check the server logs.';
@@ -910,7 +967,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-document.getElementById('search').addEventListener('input', render);
+document.getElementById('search').addEventListener('input', renderFromTop);
 function paintSortHeaders() {
   const state = { asc: 'ascending', desc: 'descending' };
   document.querySelectorAll('.sort-header').forEach(btn => {
@@ -927,30 +984,30 @@ document.querySelectorAll('.sort-header').forEach(btn => {
     const direction = JobFields.nextSortDirection(current);
     sortState = direction ? { column, direction } : null;
     paintSortHeaders();
-    render();
+    renderFromTop();
   });
 });
 
-document.getElementById('statusFilter').addEventListener('change', render);
-document.getElementById('recruiterFilter').addEventListener('change', render);
-document.getElementById('dateFrom').addEventListener('change', render);
-document.getElementById('dateTo').addEventListener('change', render);
+document.getElementById('statusFilter').addEventListener('change', renderFromTop);
+document.getElementById('recruiterFilter').addEventListener('change', renderFromTop);
+document.getElementById('dateFrom').addEventListener('change', renderFromTop);
+document.getElementById('dateTo').addEventListener('change', renderFromTop);
 document.getElementById('filterToday').addEventListener('click', () => {
   const today = localISODate(new Date());
   document.getElementById('dateFrom').value = today;
   document.getElementById('dateTo').value = today;
-  render();
+  renderFromTop();
 });
 document.getElementById('filterWeek').addEventListener('click', () => {
   const today = new Date();
   document.getElementById('dateFrom').value = startOfWeekISO(today);
   document.getElementById('dateTo').value = localISODate(today);
-  render();
+  renderFromTop();
 });
 document.getElementById('filterClearDates').addEventListener('click', () => {
   document.getElementById('dateFrom').value = '';
   document.getElementById('dateTo').value = '';
-  render();
+  renderFromTop();
 });
 document.getElementById('expandAll').addEventListener('click', () => {
   document.querySelectorAll('tr.detail-row').forEach(r => r.classList.remove('collapsed'));
