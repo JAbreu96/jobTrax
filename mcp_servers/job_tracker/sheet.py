@@ -1,14 +1,17 @@
 import logging
 import os
+import sys
 from datetime import date, datetime, timedelta
 
 import gspread
 from google.oauth2 import service_account
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from src import config  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
-SPREADSHEET_ID = "1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q"
-WORKSHEET = "Sheet1"
+WORKSHEET = config.SHEET_WORKSHEET
 ARCHIVE_WORKSHEET = "Archive"
 SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 
@@ -43,11 +46,15 @@ def _get_client() -> gspread.Client:
 
 
 def get_sheet() -> gspread.Worksheet:
-    return _get_client().open_by_key(SPREADSHEET_ID).worksheet(WORKSHEET)
+    return _get_client().open_by_key(config.require("SPREADSHEET_ID")).worksheet(WORKSHEET)
 
 
 def get_archive_sheet() -> gspread.Worksheet:
-    return _get_client().open_by_key(SPREADSHEET_ID).worksheet(ARCHIVE_WORKSHEET)
+    return (
+        _get_client()
+        .open_by_key(config.require("SPREADSHEET_ID"))
+        .worksheet(ARCHIVE_WORKSHEET)
+    )
 
 
 def _parse_date(value: str) -> date | None:

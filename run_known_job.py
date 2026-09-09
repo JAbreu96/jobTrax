@@ -11,7 +11,9 @@ import sys
 
 # ── Add src/ to path so we can import job_agent ──────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 from job_agent import JobTrackerAgent, JobRecord
+from src import config
 
 # ── Pre-filled job data ───────────────────────────────────────────────────────
 
@@ -19,8 +21,8 @@ JOB_URL      = "https://job-boards.greenhouse.io/known/jobs/8515531002"
 JOB_TITLE    = "Software Engineer"
 COMPANY      = "Known"
 LOCATION     = "Remote"
-SPREADSHEET  = "1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q"
-WORKSHEET    = "Sheet1"
+SPREADSHEET  = config.SPREADSHEET_ID
+WORKSHEET    = config.SHEET_WORKSHEET
 
 
 RAW_SUMMARY = """**Company Context**

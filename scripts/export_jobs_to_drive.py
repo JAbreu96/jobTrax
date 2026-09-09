@@ -23,6 +23,7 @@ import gspread
 from google.oauth2 import service_account
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src import config  # noqa: E402
 from src.jobs_db import (  # noqa: E402
     COLUMNS, INTERVIEW_COLUMNS, RECRUITER_COLUMNS, RECRUITER_JOB_COLUMNS,
     get_all_jobs, get_interviews, get_recruiter_jobs, get_recruiters,
@@ -37,7 +38,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-SPREADSHEET_ID = "1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q"
 EXPORT_WORKSHEET = "Daily Export"
 INTERVIEWS_WORKSHEET = "Interviews"
 RECRUITERS_WORKSHEET = "Recruiters"
@@ -51,7 +51,7 @@ def export_and_upload():
         SERVICE_ACCOUNT_FILE, scopes=SCOPES
     )
     client = gspread.authorize(creds)
-    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+    spreadsheet = client.open_by_key(config.require("SPREADSHEET_ID"))
 
     try:
         ws = spreadsheet.worksheet(EXPORT_WORKSHEET)

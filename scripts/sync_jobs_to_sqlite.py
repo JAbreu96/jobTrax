@@ -18,9 +18,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from src import jobs_db  # noqa: E402
+from src import config, jobs_db  # noqa: E402
 
-SPREADSHEET_ID = "1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q"
 SHEET_RANGE = "Sheet1!A2:L"
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "jobs.db")
 SERVICE_ACCOUNT_FILE = os.environ.get(
@@ -41,8 +40,11 @@ def get_sheet_rows():
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
     )
     service = build("sheets", "v4", credentials=creds)
+    # require() here rather than at import: tests/test_sync_archived.py imports
+    # this module at module scope, and a fork with no sheet configured must
+    # still be able to collect the suite.
     result = service.spreadsheets().values().get(
-        spreadsheetId=SPREADSHEET_ID,
+        spreadsheetId=config.require("SPREADSHEET_ID"),
         range=SHEET_RANGE
     ).execute()
     return result.get("values", [])
