@@ -353,6 +353,10 @@ const INTERVIEW_TYPES = {{ interview_types|tojson }};
 let allJobs = [];
 /* null means the table keeps the order the API sent, which is how it loads. */
 let sortState = null;
+/* Set when a prefetch page failed, so the count can say the list is short.
+   allJobs being complete is load-bearing -- search, sort and both counters all
+   run against it -- so a gap has to be visible rather than just quieter. */
+let listIncomplete = false;
 
 // The field builders live in static/job_fields.js so the kanban modal can use
 // the same ones. Aliased to bare names here because the rest of this file --
@@ -419,14 +423,70 @@ function populateRecruiterFilter() {
   sel.value = [...sel.options].some(o => o.value === previous) ? previous : '';
 }
 
+// Small enough to be on screen fast, and more than a screenful so the table is
+// not visibly short before the next page lands.
+const FIRST_PAGE = 50;
+// The rest arrives in bigger bites: past the first paint nobody is waiting on
+// any single response, so the round trips matter more than their size.
+const PREFETCH_PAGE = 250;
+
+// Bumped on every call, so a second load abandons the first one's prefetch.
+// Two loops appending into allJobs would interleave two orderings of the list.
+let loadToken = 0;
+
 async function loadJobs() {
   // Arriving from the Insights funnel means matching the population it counted,
   // archived rows included; otherwise this stays the working table.
   const fromFunnel = new URLSearchParams(window.location.search).has('stage');
-  const res = await fetch('/api/jobs' + (fromFunnel ? '?include_archived=1' : ''));
-  allJobs = await res.json();
-  populateRecruiterFilter();
-  render();
+  const base = '/api/jobs?' + (fromFunnel ? 'include_archived=1&' : '');
+  const token = ++loadToken;
+  listIncomplete = false;
+
+  const page = async (limit, cursor) => {
+    const url = base + 'limit=' + limit
+              + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('/api/jobs returned ' + res.status);
+    return res.json();
+  };
+
+  let cursor;
+  try {
+    const first = await page(FIRST_PAGE);
+    if (token !== loadToken) return;
+    allJobs = first.jobs;
+    cursor = first.next_cursor;
+    populateRecruiterFilter();
+    render();
+  } catch (err) {
+    listIncomplete = true;
+    render();
+    console.error('the jobs list could not be loaded', err);
+    return;
+  }
+
+  // The rest of the table, fetched while the first rows are already readable.
+  // It all ends up in allJobs either way -- this is about when the page paints,
+  // not about sending less -- which is why search, sort and the counters can go
+  // on running against the whole array exactly as they did before.
+  while (cursor) {
+    let next;
+    try {
+      next = await page(PREFETCH_PAGE, cursor);
+    } catch (err) {
+      // Stop rather than retry, and say so in the count: a silently short list
+      // makes the search box answer "no matches" for jobs that do exist.
+      listIncomplete = true;
+      render();
+      console.error('the jobs list stopped loading early', err);
+      return;
+    }
+    if (token !== loadToken) return;
+    allJobs = allJobs.concat(next.jobs);
+    cursor = next.next_cursor;
+    populateRecruiterFilter();
+    render();
+  }
 }
 
 function updateGoalBadge() {
@@ -465,7 +525,9 @@ function render() {
     ? filtered.slice().sort(JobFields.compareJobs(sortState.column, sortState.direction))
     : filtered;
 
-  document.getElementById('stats').textContent = `${filtered.length} of ${allJobs.length} jobs`;
+  document.getElementById('stats').textContent =
+    `${filtered.length} of ${allJobs.length} jobs`
+    + (listIncomplete ? ' — list incomplete, reload to retry' : '');
   document.getElementById('emptyState').style.display = filtered.length ? 'none' : 'block';
 
   updateGoalBadge();
