@@ -463,7 +463,21 @@ def test_a_non_integer_limit_is_rejected(paged):
     assert paged.get("/api/jobs", query_string={"limit": "all"}).status_code == 400
 
 
-def test_limit_is_clamped_rather_than_trusted(paged):
+def test_limit_is_clamped_rather_than_trusted(paged, monkeypatch):
+    """
+    The ceiling has to be asserted against a page smaller than the fixture, or
+    the test proves nothing: asking nine rows for a hundred thousand returns
+    nine whatever the cap is -- or with no cap at all. Shrinking _MAX_PAGE is
+    what makes the clamp observable.
+    """
+    monkeypatch.setattr(jobs_gui, "_MAX_PAGE", 3)
     body = paged.get("/api/jobs", query_string={"limit": 100000}).get_json()
-    assert len(body["jobs"]) == 8
+    assert len(body["jobs"]) == 3           # clamped down, not honoured
+    assert body["next_cursor"], "a clamped page still has to say there is more"
+
     assert paged.get("/api/jobs", query_string={"limit": 0}).status_code == 400
+
+
+def test_a_limit_under_the_ceiling_is_left_alone(paged):
+    body = paged.get("/api/jobs", query_string={"limit": 2}).get_json()
+    assert len(body["jobs"]) == 2

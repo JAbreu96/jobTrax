@@ -441,9 +441,14 @@ function populateRecruiterFilter() {
 // Small enough to be on screen fast, and more than a screenful so the table is
 // not visibly short before the next page lands.
 const FIRST_PAGE = 50;
-// The rest arrives in bigger bites: past the first paint nobody is waiting on
-// any single response, so the round trips matter more than their size.
-const PREFETCH_PAGE = 250;
+// Big enough to fetch everything past the first page in one round trip against
+// production's current size (1,257 jobs). Measured against Turso, where each
+// round trip floors at 114ms: 50-then-250s took 5 round trips and 760ms total;
+// 50-then-2000 takes 2 and 536ms, almost matching the first paint of 50-then-250s
+// (144ms vs 121ms) while undoing most of the total-time regression the smaller
+// chunk introduced. Bounded rather than unbounded so a table that outgrows this
+// degrades to more requests instead of one unbounded one.
+const PREFETCH_PAGE = 2000;
 
 // Bumped on every call, so a second load abandons the first one's prefetch.
 // Two loops appending into allJobs would interleave two orderings of the list.

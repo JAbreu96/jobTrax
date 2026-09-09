@@ -156,7 +156,12 @@ def kanban():
 # (idx_jobs_list) is built on -- and the comparison below walks it in the same
 # order. Opaque on the wire so the client never builds one by hand.
 _CURSOR_FIELDS = ("d", "c", "p", "l")   # date_added, company, position_title, link
-_MAX_PAGE = 500
+
+# Above the client's PREFETCH_PAGE (2000) so its post-first-page request isn't
+# silently truncated back down to multiple round trips -- see jobs.html for the
+# Turso measurements that picked 2000. Still a real ceiling, not removed: a
+# client cannot ask for an unbounded page.
+_MAX_PAGE = 2000
 
 
 def _encode_cursor(row) -> str:
