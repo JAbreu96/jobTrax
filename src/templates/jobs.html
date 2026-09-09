@@ -471,6 +471,15 @@ function render() {
   updateGoalBadge();
 
   const tbody = document.getElementById('jobsBody');
+  // Which rows are open, before the rebuild throws them away. Expanded state
+  // lives nowhere but the DOM, so every render used to collapse whatever was
+  // open -- tolerable when only a keystroke re-rendered, but the list now
+  // re-renders as background pages arrive, which would close a row out from
+  // under someone reading it.
+  const reopen = new Set(
+    [...tbody.querySelectorAll('tr.detail-row:not(.collapsed)')]
+      .map(r => r.dataset.key)
+  );
   tbody.innerHTML = '';
 
   for (const job of rows) {
@@ -509,6 +518,11 @@ function render() {
 
     tbody.appendChild(mainRow);
     tbody.appendChild(detailRow);
+
+    // Re-opened through toggleRow rather than by restoring the class, because
+    // the panel is built on open and never on render: setting the class alone
+    // would leave the row expanded around an empty cell.
+    if (reopen.has(key)) toggleRow(mainRow, detailRow, job, detailTd);
   }
 }
 
