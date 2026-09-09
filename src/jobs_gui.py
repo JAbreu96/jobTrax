@@ -10,8 +10,11 @@ Run:
 Then open http://127.0.0.1:5151 in your browser.
 """
 
+import base64
+import binascii
 import gzip
 import io
+import json
 import os
 import sys
 from datetime import date
@@ -147,6 +150,36 @@ def kanban():
                            interview_types=INTERVIEW_TYPES)
 
 
+# The list is ordered by date_added DESC, and date_added is not unique, so a
+# cursor carrying only the date cannot say where inside a tied run a page
+# stopped. It carries the whole primary key -- the tie-break the index
+# (idx_jobs_list) is built on -- and the comparison below walks it in the same
+# order. Opaque on the wire so the client never builds one by hand.
+_CURSOR_FIELDS = ("d", "c", "p", "l")   # date_added, company, position_title, link
+_MAX_PAGE = 500
+
+
+def _encode_cursor(row) -> str:
+    payload = {"d": row["date_added"], "c": row["company"],
+               "p": row["position_title"], "l": row["link"]}
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _decode_cursor(cursor: str) -> list[str]:
+    """Values in comparison order. Raises ValueError on anything malformed."""
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+    except (ValueError, binascii.Error, UnicodeDecodeError) as exc:
+        raise ValueError("undecodable cursor") from exc
+    if not isinstance(payload, dict) or any(f not in payload for f in _CURSOR_FIELDS):
+        raise ValueError("cursor is missing key fields")
+    values = [payload[f] for f in _CURSOR_FIELDS]
+    if any(not isinstance(v, str) for v in values):
+        raise ValueError("cursor fields must be strings")
+    return values
+
+
 @app.route("/api/jobs")
 def api_jobs():
     """
@@ -156,17 +189,70 @@ def api_jobs():
     archived rows on purpose (a finished outcome is its most useful input), so a
     click from a funnel stage has to land on the same population it just counted,
     or the number changes when you follow it.
+
+    ?limit (with ?cursor) pages the list, and is opt-in for exactly one reason:
+    kanban.html and the Insights drill-through also read this route and both need
+    the whole table in one answer. Without a limit the response stays the bare
+    array it has always been; with one it becomes {jobs, next_cursor}. Nothing
+    that does not ask for paging can be broken by it.
     """
     include_archived = request.args.get("include_archived") in ("1", "true", "yes")
+    limit, cursor = request.args.get("limit"), request.args.get("cursor")
+
+    if limit is not None:
+        try:
+            limit = int(limit)
+        except ValueError:
+            return jsonify({"error": "limit must be an integer"}), 400
+        if limit < 1:
+            return jsonify({"error": "limit must be at least 1"}), 400
+        limit = min(limit, _MAX_PAGE)
+    if cursor is not None:
+        try:
+            cursor_values = _decode_cursor(cursor)
+        except ValueError as exc:
+            # A 400 rather than a silent restart from row one: the client pages in
+            # a loop, and a cursor that quietly resets makes it re-read the top of
+            # the list forever instead of failing where it broke.
+            return jsonify({"error": str(exc)}), 400
+
     db = get_db()
     # Named columns, not SELECT *: dropping job_summary here takes the payload
     # from 2.1MB to 0.68MB and the query from 230ms to 152ms. Trimming in Python
     # instead would still drag the column across the wire from Turso.
     query = f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs"
+    where, params = [], []
     if not include_archived:
-        query += " WHERE archived = 0"
-    query += " ORDER BY date_added DESC"
-    rows = db.execute(query).fetchall()
+        where.append("archived = 0")
+    if cursor is not None:
+        # Written out rather than as a row-value comparison: date_added runs DESC
+        # and the tie-break columns ASC, and SQLite's (a, b) < (c, d) cannot mix
+        # directions. Every column here is NOT NULL DEFAULT '', so there is no
+        # NULL case to fall through.
+        where.append(
+            "(date_added < ?"
+            " OR (date_added = ? AND company > ?)"
+            " OR (date_added = ? AND company = ? AND position_title > ?)"
+            " OR (date_added = ? AND company = ? AND position_title = ?"
+            "     AND link > ?))"
+        )
+        d, c, p, l = cursor_values
+        params += [d, d, c, d, c, p, d, c, p, l]
+    if where:
+        query += " WHERE " + " AND ".join(where)
+    # The tie-break is what makes paging total, and it matches idx_jobs_list, so
+    # the extra columns cost nothing -- the index is already in this order.
+    query += " ORDER BY date_added DESC, company, position_title, link"
+    if limit is not None:
+        # One extra row, never returned: it is how the last page is recognised
+        # without a second COUNT query.
+        query += " LIMIT ?"
+        params.append(limit + 1)
+    rows = db.execute(query, params).fetchall()
+
+    has_more = limit is not None and len(rows) > limit
+    if has_more:
+        rows = rows[:limit]
 
     # One scan of recruiter_jobs for the whole list, not a lookup per row: this
     # runs for every job rendered, and the table is tens of rows against a
@@ -184,7 +270,11 @@ def api_jobs():
         # it read-only until the user overrides it.
         d["recruiter_from_triage"] = bool(hit and (hit.get("message_id") or "").strip())
         out.append(d)
-    return jsonify(out)
+
+    if limit is None:
+        return jsonify(out)
+    return jsonify({"jobs": out,
+                    "next_cursor": _encode_cursor(rows[-1]) if has_more else None})
 
 
 @app.route("/api/jobs/detail")

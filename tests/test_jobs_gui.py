@@ -334,3 +334,136 @@ def test_delete_dry_run_previews_without_destroying(client):
                        json={"recruiter_id": rid}).get_json()
     assert (real["jobs"], real["messages"]) == (preview["jobs"], preview["messages"])
     assert not any(r["id"] == rid for r in jobs_db.get_recruiters())
+
+
+# --- paging the list --------------------------------------------------------
+#
+# The list page paints the first rows and then prefetches the rest, so the whole
+# table still ends up in the browser -- the paging exists to get something on
+# screen sooner, not to send less. That makes "every row exactly once" the
+# property worth testing: a cursor that skips or repeats a row silently corrupts
+# the array that search, sort and the counters all run against.
+
+
+@pytest.fixture
+def paged(tmp_path, monkeypatch):
+    """
+    Nine jobs, six of them sharing one date_added.
+
+    The ties are the point. date_added is not unique, so a cursor that carries
+    only the date cannot say where inside a tied run it stopped, and pages
+    either lose rows or repeat them. Three dates keeps a boundary landing
+    mid-run.
+    """
+    monkeypatch.setattr(jobs_db, "DB_PATH", str(tmp_path / "jobs.db"))
+    jobs_db._reset_schema_cache()
+    rows = [
+        ("Alpha",   "2026-03-01"), ("Bravo",   "2026-02-01"),
+        ("Charlie", "2026-02-01"), ("Delta",   "2026-02-01"),
+        ("Echo",    "2026-02-01"), ("Foxtrot", "2026-02-01"),
+        ("Golf",    "2026-02-01"), ("Hotel",   "2026-01-01"),
+    ]
+    for company, date_added in rows:
+        jobs_db.upsert_job({
+            "company": company, "position_title": "Engineer", "link": "",
+            "date_added": date_added, "status": "Tracking",
+        })
+    jobs_db.upsert_job({
+        "company": "Zulu", "position_title": "Engineer", "link": "",
+        "date_added": "2026-02-01", "status": "Tracking",
+    })
+    # upsert_job has no archived field -- it is set by archive_jobs, on age.
+    with jobs_db.shared_connection() as conn:
+        conn.execute("UPDATE jobs SET archived = 1 WHERE company = 'Zulu'")
+        conn.commit()
+    jobs_gui.app.config["TESTING"] = True
+    with jobs_gui.app.test_client() as c:
+        yield c
+
+
+def _walk(client, limit, **params):
+    """Pages to exhaustion, returning the row keys in the order they arrived."""
+    keys, cursor, requests = [], None, 0
+    while True:
+        query = {"limit": limit, **params}
+        if cursor:
+            query["cursor"] = cursor
+        body = client.get("/api/jobs", query_string=query).get_json()
+        keys += [(j["company"], j["date_added"], j["position_title"], j["link"])
+                 for j in body["jobs"]]
+        cursor = body["next_cursor"]
+        requests += 1
+        assert requests < 50, "paging did not terminate"
+        if cursor is None:
+            return keys
+
+
+def test_no_limit_still_returns_the_whole_list_as_a_bare_array(paged):
+    """
+    The unpaginated shape is load-bearing: kanban.html and the insights
+    drill-through both read /api/jobs and neither passes a limit.
+    """
+    body = paged.get("/api/jobs").get_json()
+    assert isinstance(body, list)
+    assert len(body) == 8
+
+
+def test_a_limit_switches_the_response_to_a_paged_envelope(paged):
+    body = paged.get("/api/jobs", query_string={"limit": 3}).get_json()
+    assert [*body] == ["jobs", "next_cursor"]
+    assert len(body["jobs"]) == 3
+    assert body["next_cursor"]
+
+
+def test_paging_yields_every_row_exactly_once(paged):
+    walked = _walk(paged, limit=3)
+    whole = [(j["company"], j["date_added"], j["position_title"], j["link"])
+             for j in paged.get("/api/jobs").get_json()]
+    assert walked == whole
+    assert len(set(walked)) == len(walked)
+
+
+def test_one_row_at_a_time_survives_the_tied_dates(paged):
+    """
+    limit=1 puts a page boundary between every pair of tied rows -- the case a
+    date-only cursor gets wrong, and it gets it wrong by looping forever or by
+    dropping the whole tied run.
+    """
+    walked = _walk(paged, limit=1)
+    assert len(walked) == 8
+    assert len(set(walked)) == 8
+
+
+def test_the_last_page_closes_the_cursor(paged):
+    body = paged.get("/api/jobs", query_string={"limit": 100}).get_json()
+    assert len(body["jobs"]) == 8
+    assert body["next_cursor"] is None
+
+
+def test_archived_rows_page_the_same_way_they_list(paged):
+    walked = _walk(paged, limit=2, include_archived=1)
+    whole = [(j["company"], j["date_added"], j["position_title"], j["link"])
+             for j in paged.get("/api/jobs",
+                                query_string={"include_archived": 1}).get_json()]
+    assert walked == whole
+    assert len(walked) == 9          # the archived row is in, and only once
+
+
+def test_a_junk_cursor_is_rejected_rather_than_restarting_the_list(paged):
+    """
+    Silently falling back to page one would make the prefetch loop repeat the
+    top of the list forever instead of failing.
+    """
+    for junk in ("not-base64", "", "!!!!"):
+        assert paged.get("/api/jobs",
+                         query_string={"limit": 2, "cursor": junk}).status_code == 400
+
+
+def test_a_non_integer_limit_is_rejected(paged):
+    assert paged.get("/api/jobs", query_string={"limit": "all"}).status_code == 400
+
+
+def test_limit_is_clamped_rather_than_trusted(paged):
+    body = paged.get("/api/jobs", query_string={"limit": 100000}).get_json()
+    assert len(body["jobs"]) == 8
+    assert paged.get("/api/jobs", query_string={"limit": 0}).status_code == 400
