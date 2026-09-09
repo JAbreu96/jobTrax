@@ -32,12 +32,12 @@ times that work well for me next week:
 Wednesday, August 26: 10:00 AM - 12:00 PM or 2:00 PM - 3:30 PM ET
 
 Best,
-Joelchrist
+Test Owner
 
 On Thu, Aug 20, 2026 at 2:13 PM Liseets Taveras <
 recruiting+433606714-075c5aa6@applytojob.com> wrote:
 
-> Hi Joelchrist,
+> Hi Test Owner,
 >
 > Please respond to this email with a list of dates and times that you would
 > be available for an initial phone interview.
@@ -320,7 +320,7 @@ def test_plain_text_mail_passes_through_undamaged():
     conversation -- damaging it would be worse than not stripping at all.
     """
     inmail = (
-        "Hi Joel,\n\n"
+        "Hi Test Owner,\n\n"
         "I came across your profile and thought you'd be a great fit for a "
         "Senior Frontend Engineer role we're hiring for.\n\n"
         "Would you be open to a quick chat this week?\n\n"

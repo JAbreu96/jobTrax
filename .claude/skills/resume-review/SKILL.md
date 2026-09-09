@@ -4,14 +4,24 @@ description: Analyze a resume against a job description like a senior recruiter.
 argument-hint: "[job_url or company_name (optional)]"
 ---
 
-Analyze Joelchrist's resume against a job description using the arguments: `$ARGUMENTS`
+Analyze the user's resume against a job description using the arguments: `$ARGUMENTS`
+
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
 
 ## Base Resume (Google Doc)
 
-- **Google Doc ID:** `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk`
-- **Google Drive Resumes Folder ID:** `10QqchL7fb18Hw3Gd5KLBHct96ijIb3rR`
+- **Google Doc ID:** `{resume_doc_id}`
+- **Google Drive Resumes Folder ID:** `{resume_folder_id}`
 - **Service Account:** path set via `GOOGLE_APPLICATION_CREDENTIALS` env var
-- **Link:** https://docs.google.com/document/d/1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk/edit
+- **Link:** https://docs.google.com/document/d/{resume_doc_id}/edit
 
 **Read the live resume at the start using the Docs API:**
 
@@ -19,7 +29,10 @@ Analyze Joelchrist's resume against a job description using the arguments: `$ARG
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-DOC_ID = "1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk"
+import sys; sys.path.insert(0, ".")
+from src import config
+
+DOC_ID = config.require("RESUME_DOC_ID")  # from config/profile.md
 SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
 creds = service_account.Credentials.from_service_account_file(
@@ -44,7 +57,7 @@ resume_text = "\n".join(lines)
 print(resume_text)
 ```
 
-Use the output of this script as the resume content for the analysis. If the script fails, fall back to the `mcp__claude_ai_Google_Drive__read_file_content` tool with fileId `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk`.
+Use the output of this script as the resume content for the analysis. If the script fails, fall back to the `mcp__claude_ai_Google_Drive__read_file_content` tool with fileId `{resume_doc_id}`.
 
 ---
 
@@ -80,7 +93,7 @@ Be blunt. What would make a recruiter pause or skip this resume for this specifi
 
 ## Step 3 — Rewrite the experience section
 
-Rewrite Joelchrist's experience section to:
+Rewrite the user's experience section to:
 - Apply the **result-first formula** to every bullet: _[Impact verb] [X] as measured by [Y], by doing [Z]_ — lead with the impact, quantify it, then explain the action. Vary the opening verb naturally (Drove, Delivered, Reduced, Cut, Grew, Shipped, Improved, Eliminated, Accelerated, Established, Aligned, etc.) — never start multiple bullets with the same word, and never use "Accomplished" as a default opener
 - Naturally incorporate the missing keywords from Step 2 **only where they genuinely apply** — if a keyword can't be tied to real work in the base resume, flag it as a gap instead of forcing it
 - Address the red flags identified in Step 2 through honest reframing, not fabrication
@@ -191,9 +204,9 @@ After applying all changes, verify word count by re-reading the doc. Report the 
 1. **Extract the company name** from the job description (e.g. "Zoox", "Sesame", "Microsoft").
 
 2. **Copy the base Google Doc** using `mcp__claude_ai_Google_Drive__copy_file`:
-   - `fileId`: `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk`
-   - `parentId`: `10QqchL7fb18Hw3Gd5KLBHct96ijIb3rR`
-   - `title`: `Joelchrist Abreu — Resume — {Company}`
+   - `fileId`: `{resume_doc_id}`
+   - `parentId`: `{resume_folder_id}`
+   - `title`: `{owner_name} — Resume — {Company}`
    - Save the returned file ID as `COPY_DOC_ID`
 
 3. **Apply the rewritten bullets to the copy** using the Docs API. For each bullet that changed between the original and the rewrite, issue a `replaceAllText` request:
@@ -310,7 +323,7 @@ else:
 
    Re-read the doc and count words. Then report:
 
-   > 📄 **[Joelchrist Abreu — Resume — {Company}]({viewUrl})**
+   > 📄 **[{owner_name} — Resume — {Company}]({viewUrl})**
    > {word_count} words · All rewrites applied · Bold formatting cleaned up
 
 6. **Download the resume as PDF:**
@@ -342,7 +355,7 @@ else:
        mimeType="application/pdf"
    ).execute()
 
-   filename = f"Joelchrist Abreu — Resume — {COMPANY}.pdf"
+   filename = f"{owner_name} — Resume — {COMPANY}.pdf"
    filepath = os.path.join(OUTPUT_DIR, filename)
    with open(filepath, "wb") as f:
        f.write(content)
@@ -351,4 +364,4 @@ else:
    ```
 
    Append the local path to the result report:
-   > 💾 Saved to `~/Documents/resumes/Joelchrist Abreu — Resume — {Company}.pdf`
+   > 💾 Saved to `~/Documents/resumes/{owner_name} — Resume — {Company}.pdf`

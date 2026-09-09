@@ -4,12 +4,17 @@ description: Scan the job tracker for applications with no status progression in
 argument-hint: "[days=7]"
 ---
 
-Scan the job tracker for stale applications and send a follow-up reminder email to ajoelcrist@gmail.com. For jobs where outreach was already sent, also draft a low-pressure follow-up email per contact.
+Scan the job tracker for stale applications and send a follow-up reminder email to {notify_email}. For jobs where outreach was already sent, also draft a low-pressure follow-up email per contact.
 
-## User info
-- **Email:** ajoelcrist@gmail.com
-- **Name:** Joelchrist Abreu
-- **Outreach email:** joelchristabreu4044@gmail.com
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
 
 ---
 
@@ -45,7 +50,7 @@ The `contacts` field may be a name, a name + email (e.g. `Jane Doe <jane@company
 Keep it under 80 words. Warm, casual, zero pressure — this is a "just circling back" nudge, not a sales pitch.
 
 ```
-Subject: Re: Quick intro — Joelchrist
+Subject: Re: Quick intro — {owner_name}
 
 Hi [contact first name],
 
@@ -53,9 +58,9 @@ Just wanted to follow up on my earlier note. If you ever have a few minutes to c
 
 Hope things are going well!
 
-Joelchrist
-joelchristabreu4044@gmail.com
-linkedin.com/in/jc-abreu
+{owner_name}
+{outreach_email}
+{linkedin_url}
 ```
 
 - Personalize `[Company]` with the actual company name.
@@ -67,7 +72,7 @@ linkedin.com/in/jc-abreu
 
 For each contact with a valid email, call `mcp__gmail_personal__draft_email` with:
 - `to`: contact's email address
-- `subject`: `Re: Quick intro — Joelchrist`
+- `subject`: `Re: Quick intro — {owner_name}`
 - `body`: the follow-up email from the template above
 
 ---
@@ -77,7 +82,7 @@ For each contact with a valid email, call `mcp__gmail_personal__draft_email` wit
 ```
 Subject: Follow-Up Reminder — [X] Applications Need Attention ([Today's Date])
 
-Hi Joel,
+Hi {owner_first_name},
 
 You have [X] application(s) with no status update in the last [days] days.
 
@@ -92,7 +97,7 @@ APPLICATIONS NEEDING FOLLOW-UP
 
 [If any outreach follow-ups were drafted:]
 Follow-up drafts created for: [Company1], [Company2], ...
-Check your Gmail drafts (joelchristabreu4044@gmail.com) to review and send.
+Check your Gmail drafts ({outreach_email}) to review and send.
 
 [If no outreach follow-ups:]
 No outreach follow-ups were needed.
@@ -111,7 +116,7 @@ Claude
 ## Step 5 — Send the reminder email
 
 Use `mcp__gmail_personal__send_email` with:
-- `to`: `ajoelcrist@gmail.com`
+- `to`: `{notify_email}`
 - `subject`: `Follow-Up Reminder — [X] Applications Need Attention ([Today's Date])`
 - `body`: the email from Step 4
 
