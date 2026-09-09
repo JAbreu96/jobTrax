@@ -4,17 +4,29 @@ description: Reconcile new Gmail against the job tracker and turn only the thing
 argument-hint: "(no arguments required)"
 ---
 
-Reconcile everything that arrived in Gmail since the last run into the local job tracker, and create Google Tasks **only** for items that need Joel personally.
+Reconcile everything that arrived in Gmail since the last run into the local job tracker, and create Google Tasks **only** for items that need the user personally.
 
 This is the single scheduled owner of Gmail→tracker reconciliation. It does not send email.
 
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter — `{outreach_email}` and `{notify_email}` are the two inboxes this skill
+reconciles, and `{linkedin_forward_email}` is the alias the second one forwards
+into.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Triage writes to
+the tracker against these addresses; a wrong one silently reconciles the wrong
+mail.
+
 ## Operating principles
 
-- **Silence is the default.** Roughly 90% of inbound mail is auto-acknowledgment or rejection. Those update the tracker and are never surfaced as tasks. Joel receives ~40 such emails a day; adding them to a task list recreates the problem this skill exists to solve.
+- **Silence is the default.** Roughly 90% of inbound mail is auto-acknowledgment or rejection. Those update the tracker and are never surfaced as tasks. the user receives ~40 such emails a day; adding them to a task list recreates the problem this skill exists to solve.
 - **Never guess a row.** A wrong silent write is worse than an unanswered question. When an email cannot be tied to exactly one tracked role, ask via a task.
 - **Never downgrade a status.** `Phone Screen` outranks `Applied`. Only move a job forward, except for `Rejected`, which may always be set.
-- **The gate in Step 5 is the only thing that creates tasks.** No earlier step may create one. Categories and scores decide what is *worth* surfacing; the gate decides whether the ball is actually in Joel's court, and both must agree.
-- **`record_recruiter_outreach` is the only thing that creates job rows.** Triage reconciles mail against rows that already exist; it does not open new ones from receipts, rejections, or interview requests. A role Joel was pitched has no other way in — everything else arrives through `/applypass-inbound` with a real URL and description. Before adding any write path, check it against this line.
+- **The gate in Step 5 is the only thing that creates tasks.** No earlier step may create one. Categories and scores decide what is *worth* surfacing; the gate decides whether the ball is actually in the user's court, and both must agree.
+- **`record_recruiter_outreach` is the only thing that creates job rows.** Triage reconciles mail against rows that already exist; it does not open new ones from receipts, rejections, or interview requests. A role the user was pitched has no other way in — everything else arrives through `/applypass-inbound` with a real URL and description. Before adding any write path, check it against this line.
 - **Never destroy work.** Triage adds tasks and annotates them. It does not complete or delete them — a wrong annotation is visible and reversible, a wrong completion silently erases a real obligation.
 - **Idempotent.** Running twice in a row must produce zero new tasks and zero new writes.
 
@@ -55,8 +67,8 @@ python3 -c "from src import jobs_db; print(jobs_db.get_meta('inbox_triage.last_s
 
 | Watermark | Inbox | Tools |
 |---|---|---|
-| `inbox_triage.last_seen` | `joelchristabreu4044@` — applications, ATS, direct recruiters | `mcp__gmail_personal__*` |
-| `inbox_triage.last_seen_alt` | `ajoelcrist@` — LinkedIn InMail and notifications | `mcp__gmail_alt__*` |
+| `inbox_triage.last_seen` | `{outreach_email}` — applications, ATS, direct recruiters | `mcp__gmail_personal__*` |
+| `inbox_triage.last_seen_alt` | `{notify_email}` — LinkedIn InMail and notifications | `mcp__gmail_alt__*` |
 
 `0` means this has never run against that inbox. Use the last 24 hours rather than all
 history, and say so in the report — a zero watermark on an inbox with a backlog means the
@@ -137,23 +149,23 @@ an updated resume"* for four days.
 
 A **Settings→Forwarding rule** (not a Gmail filter — `list_filters` returns empty on
 both accounts, which is why this was once thought stale) copies LinkedIn mail from
-`ajoelcrist@` into `joelchristabreu4044+linkedin@gmail.com`, so Joel sees it in the
-inbox he actually reads. Triage must ignore those copies: it reads the originals
+`{notify_email}` into `{linkedin_forward_email}`, so the user sees it in the
+inbox they actually read. Triage must ignore those copies: it reads the originals
 through `gmail_alt`, and the forwarded duplicate is the *same conversation* arriving a
 second time. The `thread:<id>` key cannot catch it — Gmail message and thread ids are
 per-account, so the two copies look like unrelated threads and would earn two tasks for
 one recruiter.
 
 Exclude on the **sender**, not the recipient. Gmail preserves the original `To:` header
-when it forwards, so the forwarded copy still reads `To: ajoelcrist@gmail.com` and
-`-to:joelchristabreu4044+linkedin@gmail.com` would quietly match nothing.
+when it forwards, so the forwarded copy still reads `To: {notify_email}` and
+`-to:{linkedin_forward_email}` would quietly match nothing.
 `deliveredto:` is the precise operator if a recipient test is ever needed, but sender
 exclusion is simpler and costs nothing: native LinkedIn mail reaching the primary inbox
 is job-alert `noise` anyway.
 
 ### Group before reading anything
 
-The search results include Joel's own sent mail, which is what makes this free:
+The search results include the user's own sent mail, which is what makes this free:
 
 1. Compute `normalize_subject(subject)` for every result.
 2. Group by that key.
@@ -195,7 +207,7 @@ Assign each thread exactly one category, judged on its **newest message**.
 
 ### The Simplify labels come first
 
-Joel runs the Simplify browser extension, which labels application mail as it arrives.
+the user runs the Simplify browser extension, which labels application mail as it arrives.
 Two of its labels are trustworthy enough to route on, before any other test:
 
 | Label | Routing |
@@ -221,14 +233,14 @@ has. The labels are a shortcut on the primary inbox, not a replacement for the r
 
 | Category | Test | Outcome |
 |---|---|---|
-| `human_action` | A real person wrote and wants something from Joel | Gate |
+| `human_action` | A real person wrote and wants something from the user | Gate |
 | `deadline` | Something has a clock: assessment expiry, incomplete application, scheduled interview | Gate |
 | `rejection` | `detect_rejection` finds language in the message's own text | Update a tracked row, silent. Never creates one |
 | `auto_ack` | "Thank you for applying", "we've received your application", Indeed/Workday/Greenhouse receipts | Update a tracked row. **Never create one** — untracked receipts are reported in Step 8, not written |
-| `recruiter_outreach` | A staffing/agency recruiter pitching a role Joel never applied to | **Always** record the recruiter; job row and gate only if scored 60+ |
+| `recruiter_outreach` | A staffing/agency recruiter pitching a role the user never applied to | **Always** record the recruiter; job row and gate only if scored 60+ |
 | `noise` | Job alerts, marketing, newsletters, Glassdoor/Dice/LinkedIn digests, security codes | Ignore entirely |
 
-**Identifying a human:** a named sender at a company domain, writing prose addressed to Joel,
+**Identifying a human:** a named sender at a company domain, writing prose addressed to the user,
 expecting a reply. Not `no-reply@`, `noreply@`, `notifications@`, `donotreply@`, and not an
 ATS template even when it carries a person's name in the signature.
 
@@ -236,24 +248,24 @@ ATS template even when it carries a person's name in the signature.
 it to `human_action`. That promotion used to happen here, before the gate ran, and it chose
 the verb `Reply to` on the way past. Tests 2 and 3 both require reading intent, so a message
 promoted *because* its intent was unreadable fell straight through the gate — which is
-exactly how a task came to tell Joel to reply to a JustPower rejection.
+exactly how a task came to tell the user to reply to a JustPower rejection.
 
-**LinkedIn senders** (`ajoelcrist@`) split by envelope:
+**LinkedIn senders** (`{notify_email}`) split by envelope:
 
 - `hit-reply@linkedin.com` / `inmail-hit-reply@linkedin.com` carry the **full message text**
   and are a live conversation. Read them; the predicates work normally.
 - `messages-noreply@` / `jobs-noreply@` / `notifications-noreply@` are digests. `noise`.
 - A LinkedIn thread is a task candidate **only if its newest message is from the recruiter**.
-  If Joel answered last, Step 2 has already dropped it.
+  If the user answered last, Step 2 has already dropped it.
 
 **`human_action` vs `recruiter_outreach`.** Both come from a real person, so the split is
-whether Joel is already in a process. `human_action` refers to something Joel did — his
-application, his interview, a question he must answer. `recruiter_outreach` pitches a role he
+whether the user is already in a process. `human_action` refers to something the user did — their
+application, their interview, a question they must answer. `recruiter_outreach` pitches a role they
 never applied to, and is usually blasted to a list. The mechanical tells of a blast are an
-unsubscribe link, a tracking pixel, and a body that never references Joel's background; any
+unsubscribe link, a tracking pixel, and a body that never references the user's background; any
 one of them, on mail pitching an unsolicited role, makes it `recruiter_outreach`.
 
-Two things override that and make it `human_action` — a reply within a thread Joel started,
+Two things override that and make it `human_action` — a reply within a thread the user started,
 and any request that names him specifically.
 
 ---
@@ -300,7 +312,7 @@ For every other `rejection`, and every status-advancing `human_action`/`deadline
 | `ambiguous` | **No write.** Carry to the gate as `unsure`: "Which <company> role does this refer to?", listing candidates. |
 | `none` + it is a rejection | **No write.** No task — a rejection for an untracked role needs nothing. |
 | `none` + it is an `auto_ack` | **No write, no task.** Count it for Step 8 and move on. |
-| `none` + it is human/deadline | **No write.** Carry to the gate so it becomes a task. The thing worth capturing is Joel's attention, not a row. |
+| `none` + it is human/deadline | **No write.** Carry to the gate so it becomes a task. The thing worth capturing is the user's attention, not a row. |
 
 Status mapping: interview scheduled/requested → `Phone Screen`; rejection → `Rejected`.
 Both apply only to a row that already exists. A status is not a booking — if a date and
@@ -321,7 +333,7 @@ description. The receipt arrives *because* the application was submitted — it 
 duplicate of a row the import is already going to write, minus everything useful.
 
 So: acknowledge receipts against rows that exist, and let the import own creation.
-An untracked interview request still reaches Joel — as a task, which is what he acts
+An untracked interview request still reaches the user — as a task, which is what they act
 on anyway.
 
 ### A rejection closes the row it names, not the thread
@@ -356,7 +368,7 @@ same `message_id`:
 | `company` | the agency name when the employer is undisclosed (`Kastech SSG`) |
 | `position_title` | this role alone, never two joined by a slash |
 | `name`, `agency`, `email` | as signed |
-| `account` | `primary`, or `alt` for the `ajoelcrist@` inbox |
+| `account` | `primary`, or `alt` for the `{notify_email}` inbox |
 | `message_id`, `thread_id`, `subject` | from `scripts/read_mail.py` |
 | `notes` | the score and rationale, below |
 
@@ -366,7 +378,7 @@ status that has since moved on.
 
 ### The recruiter is always recorded; the job row is not
 
-Call it for **every** recruiter-sourced role, whatever the score. Who is contacting Joel is
+Call it for **every** recruiter-sourced role, whatever the score. Who is contacting the user is
 the thing the Recruiters card exists to show, and a cold blast still answers that.
 
 But only let it create a **job row** when the score clears 60 — the same bar the gate uses.
@@ -380,7 +392,7 @@ you have to ignore.
 
 **`identity` is not always the sender address.** LinkedIn InMail arrives from the shared relay
 `inmail-hit-reply@linkedin.com`; keying on that address would file every LinkedIn recruiter
-Joel ever hears from as one person.
+the user ever hears from as one person.
 
 For `linkedin`, use the **sender display name from the `From:` header**, lowercased with
 non-alphanumerics collapsed to hyphens — `Jack Dahler` becomes `jack-dahler`.
@@ -431,19 +443,19 @@ and guessing either way is a silent wrong write.
 Task list: `My Tasks`. **Every** candidate passes through this gate — `human_action`,
 `deadline`, `unsure`, and any `recruiter_outreach` scoring 60+. No category is exempt.
 
-The score and the gate answer different questions. The score asks *is this role worth Joel's
-attention?* The gate asks *is the ball in Joel's court right now?* A 72/100 role he has
+The score and the gate answer different questions. The score asks *is this role worth the user's
+attention?* The gate asks *is the ball in the user's court right now?* A 72/100 role they have
 already replied to earns no task until they answer.
 
 ### The three tests, in order
 
-1. **Who spoke last?** If Joel did, he is waiting on them. No task. Step 2's grouping catches
+1. **Who spoke last?** If the user did, they are waiting on the sender. No task. Step 2's grouping catches
    most of these for free; confirm against the thread you read. Chasing a recruiter who owes
-   *him* a reply belongs to the follow-up skills, not here.
+   *them* a reply belongs to the follow-up skills, not here.
 2. **Did they actually ask for something?** `contains_ask` — a question mark or an imperative
-   aimed at Joel. *"Let me know which would be your favorite one"*, *"could you please share
+   aimed at the user. *"Let me know which would be your favorite one"*, *"could you please share
    a few times?"* and *"Have you managed to answer the screening questions"* all qualify.
-   *"I will be sending the job details to you shortly"* does not: he owes Joel, not the
+   *"I will be sending the job details to you shortly"* does not: he owes the user, not the
    reverse. **A `deadline` satisfies this test by definition** — a scheduled interview or an
    expiring assessment is an ask whether or not it is phrased as one.
 3. **Is it only a sign-off?** `detect_closing_statement`. *"Thanks!"*, *"Sounds good!"*,
@@ -488,12 +500,12 @@ Check JustPower LLC — outcome unknown, body behind a login
   may be a rejection; open the portal to find out
 ```
 
-The notes are the point: Joel should be able to act without going back to the inbox.
+The notes are the point: the user should be able to act without going back to the inbox.
 
 ### Superseding a task the mail has overtaken
 
 Before finishing, check open tasks against the threads seen this run. When a later message
-resolves a thread that already has an open task — a rejection arrives, or Joel replied —
+resolves a thread that already has an open task — a rejection arrives, or the user replied —
 append a line to its notes with `mcp__gtasks__update` and **leave it open**:
 
 ```
@@ -501,13 +513,13 @@ append a line to its notes with `mcp__gtasks__update` and **leave it open**:
 ```
 
 Do not complete it and do not delete it. Triage must not be able to make work disappear on a
-mis-classification; Joel ticks it off himself.
+mis-classification; the user ticks it off himself.
 
 ---
 
 ## Step 5b — Draft the reply, where a draft is worth having
 
-A task that says "reply to this" still leaves the writing to Joel. Where the reply is
+A task that says "reply to this" still leaves the writing to the user. Where the reply is
 predictable, leave a Gmail draft beside it with `mcp__gmail_personal__draft_email`, and say
 in the task notes that a draft is waiting.
 
@@ -517,20 +529,20 @@ Draft only for:
 - **`human_action` where a recruiter asked something answerable from what is already known** —
   availability from the calendar, a role preference, confirmation of interest.
 
-Do **not** draft when the answer is Joel's alone to give: salary expectations, why he left a
+Do **not** draft when the answer is the user's alone to give: salary expectations, why they left a
 job, which of three roles he prefers, anything needing judgement about his own history. A
-confident draft of something only he can answer is worse than no draft, because it invites
+confident draft of something only they can answer is worse than no draft, because it invites
 sending without thinking. Never draft for an `unsure` item — by definition you do not know
 what you are answering.
 
-**Primary inbox only.** There is no drafting from `ajoelcrist@` until Joel decides which
+**Primary inbox only.** There is no drafting from `{notify_email}` until the user decides which
 address should reply to LinkedIn threads; `gmail_alt` has read tools only.
 
 Follow the `outreach-email` skill's format and constraints — that skill owns the voice, and
 this one should not grow a second copy of it. Lead with the Meta experience, keep it to
 roughly 120-150 words, and never name an employer in a subject line.
 
-Drafts are never sent. Triage does not send email; it leaves work ready for Joel to review.
+Drafts are never sent. Triage does not send email; it leaves work ready for the user to review.
 
 ---
 
@@ -563,16 +575,16 @@ Drafts are never sent. Triage does not send email; it leaves work ready for Joel
   **Only against a row that already exists.** `add_interview` keys off the full composite
   `(company, date_added, position_title, link)` and does not check that a job matches, so a
   round recorded for an untracked company attaches to nothing: it still counts in
-  `interview_stats` and the funnel while being unreachable from the table — a number Joel
+  `interview_stats` and the funnel while being unreachable from the table — a number the user
   cannot click through to. Since triage no longer creates rows, this is now reachable. If
   the job is untracked, skip the round and let the gate task carry it; record it once the
   row exists.
 - **A row was acted on**: `jobs_db.update_followup_log` with today's date, so "have I dealt
   with this" stops being invisible.
-- **Joel answered a recruiter**: `mcp__job_tracker__record_recruiter_reply` with their
+- **the user answered a recruiter**: `mcp__job_tracker__record_recruiter_reply` with their
   `identity` and the sent message's id. Step 2 already drops threads whose newest message is
   `is_from_owner` — record the reply *before* dropping one that belongs to a known recruiter,
-  or the only evidence he engaged is lost. Step 5b's drafts are not replies; record sent mail
+  or the only evidence they engaged is lost. Step 5b's drafts are not replies; record sent mail
   only.
 
 ---
@@ -595,7 +607,7 @@ reprocesses, and the `thread:<id>` duplicate check makes that safe.
 
 Never write a *label* to the mailbox to mark progress. A `triaged` label was considered
 and rejected: it would break exactly this property — a failed run that had already
-labelled its mail would not reprocess — and it writes to Joel's mailbox every day for
+labelled its mail would not reprocess — and it writes to the user's mailbox every day for
 the benefit of a value the `meta` table already holds. Triage is read-only against Gmail.
 
 ---
@@ -607,7 +619,7 @@ Print a short summary to stdout (the log). Do **not** send email:
 ```
 inbox-triage <date>
   primary: <N> messages since <watermark>   alt: <N> since <watermark>
-  threads: <n> grouped, <n> dropped (Joel spoke last)
+  threads: <n> grouped, <n> dropped (the user spoke last)
   human: <n>  deadline: <n>  rejection: <n>  auto_ack: <n>  outreach: <n>  noise: <n>
   gate: <n> passed, <n> stopped (no ask: <n>, sign-off: <n>, score < 60: <n>)
   recruiters: <n> seen (<n> new), <n> roles captured, <n> replies recorded

@@ -4,10 +4,17 @@ description: Check Gmail for job application updates in the last 24 hours, match
 argument-hint: "(no arguments required)"
 ---
 
-Check Gmail for job application update emails from the last 24 hours, cross-reference them with the job tracker, and send a digest to ajoelcrist@gmail.com.
+Check Gmail for job application update emails from the last 24 hours, cross-reference them with the job tracker, and send a digest to {notify_email}.
 
-## User info
-- **Email:** ajoelcrist@gmail.com
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
 
 ---
 
@@ -74,7 +81,7 @@ Write a clean digest email. Format:
 ```
 Subject: Job Application Digest — [Today's Date]
 
-Hi Joel,
+Hi {owner_first_name},
 
 Here's your application update digest for the last 24 hours.
 
@@ -106,7 +113,7 @@ If there are action items (e.g., schedule an interview, submit documents), call 
 ## Step 5 — Send the digest email
 
 Use `mcp__gmail_personal__send_email` with:
-- `to`: `ajoelcrist@gmail.com`
+- `to`: `{notify_email}`
 - `subject`: `Job Application Digest — [Today's Date]`
 - `body`: the digest from Step 4
 

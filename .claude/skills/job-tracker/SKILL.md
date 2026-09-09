@@ -8,6 +8,16 @@ Track the job posting at `$ARGUMENTS` by following these steps:
 
 ---
 
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
+
 ## Step 1 — Fetch the job posting
 
 If no URL was given, ask for one before continuing.
@@ -102,7 +112,7 @@ warnings.filterwarnings("ignore")
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 
-DOC_ID = "1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk"
+DOC_ID = "{resume_doc_id}"
 SERVICE_ACCOUNT_FILE = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
 creds = service_account.Credentials.from_service_account_file(
@@ -126,7 +136,7 @@ resume_text = "\n".join(lines)
 print(resume_text)
 ```
 
-If the script fails, fall back to `mcp__claude_ai_Google_Drive__read_file_content` with fileId `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk`.
+If the script fails, fall back to `mcp__claude_ai_Google_Drive__read_file_content` with fileId `{resume_doc_id}`.
 
 Using the resume text and the job description from Step 2, produce a **lightweight match assessment**:
 
@@ -216,9 +226,9 @@ Follow the resume-review skill exactly:
 4. Final summary with revised score
 5. Create Google Drive copy:
    - Copy base doc using `mcp__claude_ai_Google_Drive__copy_file` with:
-     - `fileId`: `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk`
-     - `title`: `Joelchrist Abreu — Resume — {Company}`
-     - `parentId`: `10QqchL7fb18Hw3Gd5KLBHct96ijIb3rR`
+     - `fileId`: `{resume_doc_id}`
+     - `title`: `{owner_name} — Resume — {Company}`
+     - `parentId`: `{resume_folder_id}`
    - Save the returned file ID as `COPY_DOC_ID`
    - Apply rewritten bullets via `replaceAllText`
    - Delete excess Meta bullets (keep 5, or 4 only if over 450 words) using `deleteContentRange` — never `replaceAllText` with empty string (leaves stranded empty paragraphs). Use this pattern:
@@ -280,7 +290,7 @@ Follow the resume-review skill exactly:
        mimeType="application/pdf"
    ).execute()
 
-   filename = f"Joelchrist Abreu — Resume — {COMPANY}.pdf"
+   filename = f"{owner_name} — Resume — {COMPANY}.pdf"
    filepath = os.path.join(OUTPUT_DIR, filename)
    with open(filepath, "wb") as f:
        f.write(content)
@@ -288,6 +298,6 @@ Follow the resume-review skill exactly:
    print(f"Saved to {filepath}")
    ```
    Append to the result report:
-   > 💾 Saved to `~/Documents/resumes/Joelchrist Abreu — Resume — {Company}.pdf`
+   > 💾 Saved to `~/Documents/resumes/{owner_name} — Resume — {Company}.pdf`
 
 If the match score is **below 65**, skip this step entirely.

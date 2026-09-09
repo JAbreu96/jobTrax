@@ -1,14 +1,20 @@
 ---
 name: sent-followup
-description: Scan the joelchristabreu4044@gmail.com sent folder for outreach and interview emails with no reply in 7+ days, check follow-up count via Gmail, draft follow-ups (max 2 per thread), and log dates to the local job tracker DB.
+description: Scan the {outreach_email} sent folder for outreach and interview emails with no reply in 7+ days, check follow-up count via Gmail, draft follow-ups (max 2 per thread), and log dates to the local job tracker DB.
 argument-hint: "[days=7]"
 ---
 
 Scan the sent folder for emails that haven't received a reply in `$ARGUMENTS` days (default: 7), then draft follow-ups. Cap at 2 follow-ups per thread. Log follow-up dates to the job tracker.
 
-## User info
-- **Outreach email:** joelchristabreu4044@gmail.com
-- **Name:** Joelchrist Abreu
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
 
 ---
 
@@ -16,7 +22,7 @@ Scan the sent folder for emails that haven't received a reply in `$ARGUMENTS` da
 
 Use `mcp__gmail_personal__search_emails` with query:
 ```
-in:sent older_than:{days}d newer_than:30d -to:ajoelcrist@gmail.com
+in:sent older_than:{days}d newer_than:30d -to:{notify_email}
 ```
 
 Where `{days}` is the argument passed (default: 7).
@@ -85,7 +91,7 @@ Classify each remaining thread as one of two types:
 For each eligible thread, draft an appropriate follow-up.
 
 ### Parsing contact info
-- Extract the recipient's **first name** from the `to` field (e.g. `Cameron <cameron@doorlist.app>` → Cameron; if only an email, use the part before `@`)
+- Extract the recipient's **first name** from the `to` field (e.g. `Dana <dana@example.com>` → Dana; if only an email, use the part before `@`)
 - Infer the **company name** from the email domain (e.g. `@doorlist.app` → Doorlist, `@sony.com` → Sony) or from the original subject
 
 ---
@@ -103,9 +109,9 @@ Just wanted to follow up on my earlier note. If you ever have a few minutes to c
 
 Hope things are going well!
 
-Joelchrist
-joelchristabreu4044@gmail.com
-linkedin.com/in/jc-abreu
+{owner_name}
+{outreach_email}
+{linkedin_url}
 ```
 
 **Rules:**
@@ -129,9 +135,9 @@ I wanted to follow up and reiterate my interest in the opportunity at [Company].
 Please don't hesitate to reach out if there's any additional information I can provide or if there's an update on timing — I'm happy to be flexible.
 
 Thanks,
-Joelchrist Abreu
-joelchristabreu4044@gmail.com
-linkedin.com/in/jc-abreu
+{owner_name}
+{outreach_email}
+{linkedin_url}
 ```
 
 **Rules:**
@@ -182,7 +188,7 @@ After all drafts are saved, report:
 ```
 Sent Follow-Up Drafts — [Today's Date]
 ──────────────────────────────────────
-[N] draft(s) saved to joelchristabreu4044@gmail.com
+[N] draft(s) saved to {outreach_email}
 
 OUTREACH FOLLOW-UPS ([n]):
 • [First Name] @ [Company] — originally sent [X] days ago | follow-up #[1 or 2] | tracker updated
