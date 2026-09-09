@@ -451,6 +451,18 @@ const PREFETCH_PAGE = 250;
 // Two loops appending into allJobs would interleave two orderings of the list.
 let loadToken = 0;
 
+// True while background pages are still coming. renderedCount can reach
+// allJobs.length after only the first 50-row page has landed -- that's not
+// the end of the list, just the end of what has arrived so far -- and
+// observeSentinel needs to tell the two apart to keep the loading row up.
+// Set from !!cursor rather than unconditionally at the top of loadJobs, so a
+// list that fits in one page never claims to be prefetching. The stale
+// `token !== loadToken` returns below deliberately leave this alone: a
+// superseded call's late resolution touching it would race with whatever the
+// newer call has already set, and the newer call owns the flag until it
+// finishes.
+let prefetching = false;
+
 async function loadJobs() {
   // Arriving from the Insights funnel means matching the population it counted,
   // archived rows included; otherwise this stays the working table.
@@ -473,10 +485,12 @@ async function loadJobs() {
     if (token !== loadToken) return;
     allJobs = first.jobs;
     cursor = first.next_cursor;
+    prefetching = !!cursor;
     populateRecruiterFilter();
     render();
   } catch (err) {
     listIncomplete = true;
+    prefetching = false;
     render();
     console.error('the jobs list could not be loaded', err);
     return;
@@ -494,6 +508,7 @@ async function loadJobs() {
       // Stop rather than retry, and say so in the count: a silently short list
       // makes the search box answer "no matches" for jobs that do exist.
       listIncomplete = true;
+      prefetching = false;
       render();
       console.error('the jobs list stopped loading early', err);
       return;
@@ -501,6 +516,7 @@ async function loadJobs() {
     if (token !== loadToken) return;
     allJobs = allJobs.concat(next.jobs);
     cursor = next.next_cursor;
+    prefetching = !!cursor;
     populateRecruiterFilter();
     render();
   }
@@ -626,19 +642,34 @@ let sentinelObserver = null;
 
 function observeSentinel(tbody, total) {
   if (sentinelObserver) sentinelObserver.disconnect();
-  if (renderedCount >= total) return;
+  // renderedCount >= total only says the drawn window has caught up with
+  // what has arrived -- with the first 50-row page in and the rest still in
+  // flight, total is just how much of the list exists in memory so far, not
+  // the true length. Keep the row up in that case too, or the table reads as
+  // complete the moment page one lands and then grows under the reader.
+  if (renderedCount >= total && !prefetching) return;
 
   const row = document.createElement('tr');
   row.id = 'scrollSentinel';
   const cell = document.createElement('td');
   cell.colSpan = 6;
   cell.className = 'sentinel';
-  cell.textContent = `Loading more… (${renderedCount} of ${total})`;
+  // "50 of 50" would read as finished, not loading, when the gap is really
+  // that nothing past the first page has arrived yet.
+  cell.textContent = renderedCount < total
+    ? `Loading more… (${renderedCount} of ${total})`
+    : 'Loading the rest of the list…';
   row.appendChild(cell);
   tbody.appendChild(row);
 
   sentinelObserver = new IntersectionObserver((entries) => {
     if (!entries.some(e => e.isIntersecting)) return;
+    // Guarded: with nothing past `total` drawn yet, bumping renderedCount
+    // would get clamped straight back down by render(), but the observer is
+    // rebuilt on every render and this row would already be intersecting on
+    // the next one -- an unguarded bump here is a busy loop of renders for
+    // as long as the sentinel stays on screen and the prefetch is in flight.
+    if (renderedCount >= total) return;
     renderedCount += RENDER_CHUNK;
     render();
   }, { rootMargin: '400px' });   // start drawing before the gap is visible
