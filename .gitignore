@@ -1,8 +1,14 @@
 # Environment & secrets
 .env
 .env.*
+# ...but not the template. `.env.*` above was silently swallowing it, which is
+# why the file the README told you to copy never existed in the repo.
+!.env.example
 *.json.key
 *service-account*.json
+
+# Your filled-in identity. `config/profile.example.md` is the tracked template.
+config/profile.md
 
 # Python
 .venv/

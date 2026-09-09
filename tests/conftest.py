@@ -31,6 +31,33 @@ def _never_touch_the_cloud_database():
             os.environ[k] = v
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _pin_test_profile(_never_touch_the_cloud_database):
+    """Point `src.config` at a fixture profile for the whole session.
+
+    Otherwise the suite asserts against whatever `config/profile.md` happens to
+    hold on the machine running it: green on the author's laptop, red on a fresh
+    fork that has no profile at all. Same class of bug the config extraction
+    exists to remove, so it does not get to live in the tests either.
+
+    Ordered after the cloud-database fixture so `config.refresh()` cannot be the
+    thing that puts TURSO_* back.
+    """
+    from src import config
+
+    saved = os.environ.get("AGENTS_PROFILE")
+    os.environ["AGENTS_PROFILE"] = os.path.join(
+        os.path.dirname(__file__), "fixtures", "profile.test.md"
+    )
+    config.refresh()
+    yield
+    if saved is None:
+        os.environ.pop("AGENTS_PROFILE", None)
+    else:
+        os.environ["AGENTS_PROFILE"] = saved
+    config.refresh()
+
+
 @pytest.fixture(autouse=True)
 def _assert_still_local():
     """
