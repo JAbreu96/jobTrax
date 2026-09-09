@@ -13,7 +13,9 @@ import sys
 
 # ── Add src/ to path so we can import job_agent ──────────────────────────────
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+sys.path.insert(0, os.path.dirname(__file__))
 from job_agent import JobTrackerAgent, JobRecord
+from src import config
 
 # ── Pre-filled job data ───────────────────────────────────────────────────────
 
@@ -21,8 +23,8 @@ JOB_URL      = "https://www.reval.site/jobs/030a4814-c4de-41ee-a7b1-4cc6aad41fbd
 JOB_TITLE    = "Founding Engineer"
 COMPANY      = "Healthcare AI Startup (via Reval Recruiting)"
 LOCATION     = "New York, NY (Hybrid)"
-SPREADSHEET  = "1CTqYgEFnOUySEIBpqFxeRdjBJxeImi40MZ_rhq9NE4Q"
-WORKSHEET    = "Sheet1"
+SPREADSHEET  = config.SPREADSHEET_ID
+WORKSHEET    = config.SHEET_WORKSHEET
 
 
 RAW_SUMMARY = """

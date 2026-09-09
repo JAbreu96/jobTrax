@@ -47,8 +47,8 @@ run_start=$(wc -l < "$LOG_FILE")
 # it exists to keep quiet. Bash is needed for the watermark read/write and for
 # the predicates in src/triage_rules.py.
 #
-# gmail_alt is ajoelcrist@ (LinkedIn). Read tools only -- no draft_email --
-# until Joel decides which address should reply to those threads.
+# gmail_alt is the secondary inbox (LinkedIn). Read tools only -- no
+# draft_email -- until the user decides which address replies to those threads.
 # gtasks__update is for appending [SUPERSEDED ...] notes; there is deliberately
 # no gtasks__delete or completion path, so triage can never destroy work.
 # Pin the model rather than inheriting it. Without this the scheduled run uses

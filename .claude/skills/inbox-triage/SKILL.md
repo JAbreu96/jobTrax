@@ -33,7 +33,7 @@ print('ask:      ', contains_ask(body))
 "
 ```
 
-`normalize_subject`, `is_from_joel`, `strip_quoted_chain`, `strip_html` and
+`normalize_subject`, `is_from_owner`, `strip_quoted_chain`, `strip_html` and
 `unescape_title` are there too. Every predicate strips the quoted reply chain first — a
 fetched body carries the history inline, and a scan over the raw text reads sign-offs and
 rejection language out of *earlier* messages, so every long thread eventually looks closed.
@@ -157,7 +157,7 @@ The search results include Joel's own sent mail, which is what makes this free:
 
 1. Compute `normalize_subject(subject)` for every result.
 2. Group by that key.
-3. If a group's **newest** message is `is_from_joel(from)`, Joel spoke last. The whole
+3. If a group's **newest** message is `is_from_owner(from)`, the user spoke last. The whole
    group drops out here, before any body is fetched.
 
 ### Reading bodies
@@ -571,7 +571,7 @@ Drafts are never sent. Triage does not send email; it leaves work ready for Joel
   with this" stops being invisible.
 - **Joel answered a recruiter**: `mcp__job_tracker__record_recruiter_reply` with their
   `identity` and the sent message's id. Step 2 already drops threads whose newest message is
-  `is_from_joel` — record the reply *before* dropping one that belongs to a known recruiter,
+  `is_from_owner` — record the reply *before* dropping one that belongs to a known recruiter,
   or the only evidence he engaged is lost. Step 5b's drafts are not replies; record sent mail
   only.
 

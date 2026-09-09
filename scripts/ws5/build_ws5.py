@@ -20,21 +20,24 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, REPO)
+from src import config  # noqa: E402
 DB = os.path.join(REPO, "data", "jobs.db")
 TEMPLATE = os.path.join(HERE, "WS5.pdf")
 EVIDENCE = os.path.join(HERE, "evidence.json")
-OUTDIR = os.path.expanduser("~/Desktop/WS5_work_search_records")
+OUTDIR = config.WS5_OUTDIR
 
 # One uniform font size for every filled cell. Lower this for smaller text;
 # individual cells only drop below it when a value genuinely cannot fit.
 FONT_PT = 8.0
 
-# First benefit week on record. Gmail and the tracker both show no job
-# applications before 2026-05-14, so the backfill never walks back past this.
-RECORD_START = date(2026, 5, 17)
+# First benefit week on record; the backfill never walks back past it. Set
+# ws5_record_start in config/profile.md. Unset means no week is old enough to
+# fill, which is the right answer for anyone not claiming New York benefits.
+RECORD_START = config.WS5_RECORD_START or date.max
 
-FIRST_NAME = "Joelchrist"
-LAST_NAME = "Abreu"
+FIRST_NAME = config.OWNER_FIRST_NAME
+LAST_NAME = config.OWNER_LAST_NAME
 
 def load_evidence():
     """Gmail-confirmed applications, from evidence.json (append-only record).

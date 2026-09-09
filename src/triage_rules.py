@@ -6,11 +6,11 @@ judgement on every run — which is why the same errors kept recurring. The half
 of the gate that is mechanical lives here instead, where it can be tested.
 
 Judgement that genuinely needs a model — is this sender a real person, is this
-an ask only Joel can answer — stays in the skill.
+an ask only you can answer — stays in the skill.
 
 Every public predicate strips the quoted reply chain itself. `read_email`
 returns the history inline, so a scan over the raw body reads sign-offs and
-rejection language out of *earlier* messages (including Joel's own) and every
+rejection language out of *earlier* messages (including your own) and every
 long thread eventually looks closed. Callers cannot opt out of the strip, on
 purpose.
 
@@ -19,14 +19,14 @@ Usage:
 """
 
 import html
+import os
 import re
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
-JOEL_ADDRESSES = (
-    "joelchristabreu4044@gmail.com",
-    "ajoelcrist@gmail.com",
-)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from src import config  # noqa: E402
 
 # ---------------------------------------------------------------- subjects
 
@@ -49,10 +49,15 @@ def normalize_subject(subject: str) -> str:
     return re.sub(r"\s+", " ", s).strip().casefold()
 
 
-def is_from_joel(from_header: str) -> bool:
-    """Test #1: a search result written by Joel means he spoke last."""
+def is_from_owner(from_header: str) -> bool:
+    """Test #1: a search result written by you means you spoke last.
+
+    Addresses are read from the profile on every call rather than captured at
+    import, so `config.refresh()` — which the test suite uses to pin a fixture
+    profile — takes effect.
+    """
     header = (from_header or "").casefold()
-    return any(addr in header for addr in JOEL_ADDRESSES)
+    return any(addr in header for addr in config.OWNER_EMAILS)
 
 
 # ------------------------------------------------------------ quoted chain
@@ -186,7 +191,7 @@ _ASK_PHRASES = (
     "are you available", "are you interested", "do you have time",
     "what times", "when are you", "your availability",
     "get back to me", "confirm your", "sign the", "complete the",
-    # soft asks -- an offer that still puts the next move on Joel
+    # soft asks -- an offer that still puts the next move on you
     "if you're interested", "if you are interested", "if that sounds",
     "happy to schedule", "happy to set up", "would you be open",
     "are you open to", "worth taking a look", "let us know",
@@ -194,9 +199,9 @@ _ASK_PHRASES = (
 
 
 def contains_ask(body: str) -> bool:
-    """Test #2: does this message ask Joel for something?
+    """Test #2: does this message ask you for something?
 
-    A question mark or any imperative aimed at him. Deliberately generous:
+    A question mark or any imperative aimed at you. Deliberately generous:
     missing a real ask costs an opportunity, while a false positive only means
     the message goes to the model for judgement.
     """
@@ -230,7 +235,7 @@ def _is_pleasantry(sentence: str) -> bool:
         return True
     if _GREETING.match(sentence):
         return True
-    if len(s.split()) <= 3:          # a bare name, an emoji, "joel"
+    if len(s.split()) <= 3:          # a bare name, an emoji, a sign-off
         return True
     return any(s.startswith(p) or s == p for p in _CLOSING_PHRASES)
 
