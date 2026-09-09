@@ -10,12 +10,24 @@ Parse the arguments:
 - **role** — what to search for (e.g. "software engineer AI React", "frontend engineer TypeScript")
 - **location** — optional filter (e.g. "New York", "remote", "San Francisco"). If omitted, search broadly.
 
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
+
 ## Candidate profile (for scoring)
-- **Name:** Joelchrist Abreu
-- **Stack:** React, TypeScript, JavaScript, GraphQL, Node.js, Python (exposure), Claude/LLMs, HTML/CSS, Tailwind, Jest
-- **Experience:** ~2 years total (1 year at Meta + prior SWE roles); targets roles asking for 1–3 years
-- **Strengths:** AI agent work, frontend/full-stack, cross-functional shipping
-- **Location:** New York, NY
+
+Use the profile's `## Candidate profile (for scoring)` section — stack, years of
+experience, strengths, location. Score against what it says, not against what
+the role sounds like it wants.
+
+The rules below stay here rather than in the profile: they are this skill's
+policy on how to weigh a mismatch, not a fact about the candidate.
 
 ### Experience-level scoring rules
 Apply these adjustments **before** finalizing any match score:
@@ -31,7 +43,7 @@ Do NOT filter out senior roles entirely — just score them honestly so the user
 
 ## Step 1 — Read the resume
 
-Use `mcp__claude_ai_Google_Drive__read_file_content` with fileId `1WJRx42io40tkv38KS2dO1MharN5T7wh1ZFNDftjCVtk` to get the full resume text.
+Use `mcp__claude_ai_Google_Drive__read_file_content` with fileId `{resume_doc_id}` to get the full resume text.
 
 Save this as `RESUME_TEXT` — used for scoring all jobs in Step 4.
 

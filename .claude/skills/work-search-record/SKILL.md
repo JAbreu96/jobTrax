@@ -6,11 +6,15 @@ argument-hint: "(optional) week-ending Sunday as YYYY-MM-DD; defaults to the wee
 
 Fill out the New York State DOL **WS-5 Work Search Record** for the week that just ended, using Gmail application confirmations as evidence.
 
-## User info
-- **Email:** ajoelcrist@gmail.com
-- **Mailbox searched:** joelchristabreu4044@gmail.com
-- **Forms output:** `~/Desktop/WS5_work_search_records/`
-- **Evidence file:** `scripts/ws5/evidence.json`
+## Step 0 — Load the profile
+
+Read `config/profile.md`. Every `{placeholder}` below is a key in its front
+matter.
+
+If that file does not exist, stop and tell the user to run
+`cp config/profile.example.md config/profile.md` and fill it in. Do not guess a
+name, address or document ID — a wrong address here sends real mail to a
+stranger.
 
 ## Why accuracy matters here
 
@@ -54,7 +58,7 @@ The NYS benefit week **ends on Sunday**. For the `WEEK_END` you are processing, 
 Use `mcp__gmail_personal__search_emails`. Gmail's `after:`/`before:` are date-exclusive at the edges, so pad by a day and filter by the returned `Date:` headers:
 
 ```
-("thank you for applying" OR "thanks for applying" OR "thank you for your application" OR "application received" OR "we received your application" OR "your application has been received" OR "Indeed Application" OR "we've received your application" OR "application to") -from:joelchristabreu4044@gmail.com after:<WEEK_END-7> before:<WEEK_END+1>
+("thank you for applying" OR "thanks for applying" OR "thank you for your application" OR "application received" OR "we received your application" OR "your application has been received" OR "Indeed Application" OR "we've received your application" OR "application to") -from:{outreach_email} after:<WEEK_END-7> before:<WEEK_END+1>
 ```
 
 Set `maxResults` to 100.
@@ -126,7 +130,7 @@ It **exits 2 if the week is short** of 3 activities.
 
 Only send an email if **at least one form was generated**. Never email on a no-op run.
 
-Send via `mcp__gmail_personal__send_email` to `ajoelcrist@gmail.com`:
+Send via `mcp__gmail_personal__send_email` to `{notify_email}`:
 
 - Subject for a single week: `Work Search Record — week ending <WEEK_END>`
 - Subject when backfilling several: `Work Search Record — <N> weeks generated`
