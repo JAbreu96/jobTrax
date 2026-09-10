@@ -1,0 +1,61 @@
+/*
+ * Carried from src/static/job_views.css:
+ *   .recruiter-field     (~line 124)
+ *   .recruiter-current   (~line 125)
+ *   .recruiter-provenance (~line 126)
+ *   .recruiter-new       (~line 127)
+ *   .recruiter-new input (~line 128)
+ * and `button.linklike` (~line 81), needed for "Change anyway"/"Cancel".
+ *
+ * NOT carried here: `.recruiter-pill.from-triage` (~line 123). That rule
+ * styles the badge `recruiterBadge()` builds for the job ROW/card (see its
+ * two call sites, jobs.html:844 and kanban.html:398) -- a different DOM
+ * subtree than this field, owned by whichever component renders a row/card,
+ * which is Phase 4/5's scope. Nothing in this phase renders that badge, so
+ * porting its rule here would be dead CSS with no home. Flagging explicitly
+ * per the brief rather than silently dropping it: Phase 4/5 must carry it
+ * into their own row/card module when they build the badge.
+ *
+ * Also not carried: the two views' differing `.recruiter-select` min-widths
+ * (jobs.html 260px vs kanban.html 240px) -- a real view-specific difference
+ * of the kind Trap B calls out, but there is no consuming layout yet to
+ * decide whether it becomes a prop or a wrapper-level custom property.
+ * Left to Phase 4/5 to add once the field sits inside a real row/modal.
+ */
+.recruiterField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recruiterCurrent {
+  font-weight: 600;
+}
+
+.recruiterProvenance {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.recruiterNew {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.recruiterNew input {
+  padding: 4px 6px;
+}
+
+.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #3574f0);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+}
