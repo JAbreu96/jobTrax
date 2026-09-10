@@ -1,0 +1,16 @@
+/*
+ * `.non-date-value` / `.non-date-value .raw-text` from
+ * src/static/job_views.css (~line 104) and the per-view `<style>` blocks --
+ * not one of the rules the brief calls out by name, but carried for the
+ * same reason as the others in this phase: the legacy fallback this file
+ * ports would otherwise render unstyled.
+ */
+.nonDateValue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rawText {
+  flex: 1;
+}
