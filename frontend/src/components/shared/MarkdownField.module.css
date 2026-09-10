@@ -1,0 +1,95 @@
+/*
+ * The clamp-and-fade rule that makes overflow measurement meaningful at all.
+ *
+ * This rule does NOT live in src/static/job_views.css -- in the original it
+ * is duplicated, once in src/templates/jobs.html's inline <style> (scoped
+ * under `.detail-field.notes-field`, faded to `var(--card)`) and once in
+ * src/templates/kanban.html's (scoped under `.modal-field`, faded to
+ * `var(--bg)`). The two copies are byte-identical except for that one colour.
+ *
+ * Here they become one copy. The fade colour is a CSS custom property,
+ * `--markdown-fade-color`, that the consumer sets (via the `fadeColor` prop)
+ * instead of the class scoping the original used to pick between two
+ * hardcoded gradients. It defaults to `var(--card)`, matching jobs.html; the
+ * kanban view passes `var(--bg)` to match kanban.html.
+ */
+/*
+ * The typographic rules below came from src/static/job_views.css lines 95-102,
+ * where they were written as `.markdown-rendered ...` descendant selectors.
+ * They have to move here with the component: this element now carries a hashed
+ * CSS Module class, so those global selectors no longer match it and every one
+ * of these rules would silently stop applying -- a change nothing in the test
+ * suite can see, because jsdom applies no CSS at all.
+ *
+ * `white-space: normal` is deliberate and is NOT `pre-wrap`: the parser already
+ * turns newlines into <br> elements, so preserving source whitespace on top of
+ * that would double the line breaks and keep runs of spaces the original
+ * collapsed.
+ */
+.rendered {
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.rendered p { margin: 0 0 8px; }
+.rendered p:last-child { margin-bottom: 0; }
+.rendered ul { margin: 0 0 8px; padding-left: 20px; }
+.rendered h4 { margin: 10px 0 4px; font-size: 13px; }
+.rendered code {
+  background: rgba(127, 127, 127, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/*
+ * 4.2em against the 1.4 line-height above is exactly three lines, and the fade
+ * below is exactly one. Change either number without the other and the clamp
+ * stops landing on a line boundary -- they are a matched set, which is why the
+ * line-height cannot be left to inheritance.
+ */
+.rendered:not(.expanded) {
+  max-height: 4.2em;
+  overflow: hidden;
+  position: relative;
+}
+
+.rendered:not(.expanded)::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.4em;
+  background: linear-gradient(to bottom, transparent, var(--markdown-fade-color, var(--card)));
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* `.markdown-expand-btn` in job_views.css:102, for the same reason as above. */
+.expandBtn {
+  align-self: flex-start;
+  padding-left: 0;
+}
+
+.expandBtn,
+.editBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #3574f0);
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 80px;
+  font: inherit;
+  white-space: pre-wrap;
+}
