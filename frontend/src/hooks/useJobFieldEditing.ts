@@ -1,16 +1,18 @@
 /*
  * React port of `create(ctx)`'s persistence surface in
- * src/static/job_fields.js (lines ~215-282 as of Phase 2). That file mixed
- * persistence (`saveField`, `deleteJob`, and the recruiter helpers) with DOM
- * building (`create(ctx)` and its field builders). This hook owns only the
- * persistence half; the field builders become the components in this
- * directory.
+ * src/static/job_fields.js (lines ~215-403 as of Phase 2, plus the recruiter
+ * persistence helpers at ~330-386).
  *
- * Phase 3a covers `saveField` and `deleteJob`. The recruiter half
- * (`saveJobRecruiter`, `createRecruiter`, `loadRecruiters`) arrives in Phase
- * 3b alongside <RecruiterField>, which is the only thing that consumes it --
- * this phase was split because the two together ran to three times this
- * repo's per-PR budget.
+ * Phase 3a added saveField and deleteJob; Phase 3b adds the recruiter pair
+ * below, which <RecruiterField> is the only consumer of. The two shipped
+ * separately because together they ran to three times this repo's per-PR
+ * budget.
+ *
+ * That file mixed persistence
+ * (`saveField`, `deleteJob`, `saveJobRecruiter`, `createRecruiter`,
+ * `loadRecruiters`) with DOM building (`create(ctx)` and its field
+ * builders). This hook owns only the persistence half; the field builders
+ * become the components in this directory.
  *
  * ctx keys that do NOT reappear here, and why:
  *   - `interviewTypes` was a Jinja global this file couldn't see. Phase 0's
@@ -40,9 +42,9 @@
  * original's "redraw everything" callbacks.
  */
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { postJSON } from "../api/client";
+import { postJSON, ApiError } from "../api/client";
 import { jobKeyFields, rowKey, type JobKeyInput } from "../lib/jobFields";
-import type { Job, JobKey, JobsPage, JobDetail } from "../api/types";
+import type { Job, JobKey, JobsPage, JobDetail, Recruiter } from "../api/types";
 
 // ---------------------------------------------------------------------------
 // Cache helpers -- the React replacement for "mutate `job`, then re-render".
@@ -83,6 +85,31 @@ export interface SaveFieldVariables {
 interface SaveFieldResponse {
   date_applied?: string;
   [k: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// setRecruiter -- POST /api/jobs/recruiter
+// ---------------------------------------------------------------------------
+
+export interface RecruiterLinkResult {
+  recruiter_id: number | null;
+  recruiter_name: string | null;
+  recruiter_agency: string | null;
+  recruiter_from_triage: boolean;
+}
+
+// Resolves rather than throws on a 409: the original's comment on
+// saveJobRecruiter explains why a blocked write is an *expected* answer here
+// (the link belongs to a message; the caller offers an override), not an
+// error. Any other failure still throws, same as saveField/deleteJob.
+export type SetRecruiterResult =
+  | { ok: true; recruiter: RecruiterLinkResult }
+  | { ok: false; blocked: unknown[]; error: string };
+
+export interface CreateRecruiterFields {
+  name: string;
+  agency: string;
+  email: string;
 }
 
 export interface UseJobFieldEditingOptions {
@@ -139,7 +166,75 @@ export function useJobFieldEditing(options: UseJobFieldEditingOptions = {}) {
     },
   });
 
-  return { saveField, deleteJob };
+  const setRecruiter = useMutation({
+    mutationFn: async (vars: {
+      job: JobKeyInput;
+      recruiterId: number | null;
+      override: boolean;
+    }): Promise<SetRecruiterResult> => {
+      try {
+        const data = await postJSON<{ recruiter: RecruiterLinkResult | null }>(
+          "/api/jobs/recruiter",
+          {
+            ...jobKeyFields(vars.job),
+            recruiter_id: vars.recruiterId,
+            override: vars.override,
+          },
+        );
+        const r = data.recruiter;
+        return {
+          ok: true,
+          recruiter: {
+            recruiter_id: r ? r.recruiter_id : null,
+            recruiter_name: r ? r.recruiter_name : null,
+            recruiter_agency: r ? r.recruiter_agency : null,
+            // message_id on the wire (see recruiterLabel/saveJobRecruiter in
+            // the original) means "this link came from inbox-triage".
+            recruiter_from_triage: !!(r && (r as unknown as { message_id?: unknown }).message_id),
+          },
+        };
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          const body = e.body as { blocked?: unknown[] } | undefined;
+          return { ok: false, blocked: body?.blocked ?? [], error: e.message };
+        }
+        throw e;
+      }
+    },
+    onSuccess: (result, variables) => {
+      if (result.ok) {
+        patchJobInCaches(queryClient, variables.job, {
+          recruiter_id: result.recruiter.recruiter_id,
+          recruiter_name: result.recruiter.recruiter_name,
+          recruiter_agency: result.recruiter.recruiter_agency,
+          recruiter_from_triage: result.recruiter.recruiter_from_triage,
+        });
+      }
+      // The blocked (409) case is deliberately NOT patched here: the caller
+      // (RecruiterField) re-locks by patching recruiter_from_triage itself,
+      // because that patch has to happen synchronously with the redraw --
+      // see the component for the "raced with triage" comment.
+    },
+  });
+
+  /*
+   * The original's `loadRecruiters` kept a module-level cache shared by
+   * every combobox on the page, refreshed after a create. That cache is
+   * just `useRecruiters()` (frontend/src/api/queries.ts) now -- TanStack
+   * Query already dedupes and shares the fetch. This mutation's onSuccess
+   * invalidates that query instead of manually refetching and splicing the
+   * result in, so a recruiter created from any field becomes selectable
+   * everywhere on the next render.
+   */
+  const createRecruiter = useMutation({
+    mutationFn: (fields: CreateRecruiterFields) =>
+      postJSON<{ recruiter: Recruiter }>("/api/recruiters/add", fields),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recruiters"] });
+    },
+  });
+
+  return { saveField, deleteJob, setRecruiter, createRecruiter };
 }
 
 // Re-exported only for tests that want to assert on cache shape directly

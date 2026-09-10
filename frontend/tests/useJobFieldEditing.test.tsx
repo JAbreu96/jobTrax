@@ -146,4 +146,78 @@ describe("useJobFieldEditing", () => {
     expect(page?.jobs).toHaveLength(0);
   });
 
+  it("resolves (does not throw) a 409 with a blocked list from setRecruiter", async () => {
+    const job = makeJob({ recruiter_id: 1, recruiter_from_triage: false });
+    const { Wrapper } = wrapperWithJobsCache(job);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      jsonResponse({ error: "linked to a message", blocked: [{ id: 5 }] }, 409),
+    );
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    let outcome;
+    await act(async () => {
+      outcome = await result.current.setRecruiter.mutateAsync({
+        job,
+        recruiterId: 2,
+        override: false,
+      });
+    });
+
+    expect(outcome).toEqual({
+      ok: false,
+      blocked: [{ id: 5 }],
+      error: "linked to a message",
+    });
+  });
+
+  it("patches the job's recruiter fields in the cache on a successful setRecruiter", async () => {
+    const job = makeJob();
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      jsonResponse({
+        recruiter: {
+          recruiter_id: 9,
+          recruiter_name: "Jane",
+          recruiter_agency: "Agency Co",
+          message_id: null,
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.setRecruiter.mutateAsync({ job, recruiterId: 9, override: false });
+    });
+
+    const page = queryClient.getQueryData<JobsPage>(["jobs", {}]);
+    expect(page?.jobs[0].recruiter_id).toBe(9);
+    expect(page?.jobs[0].recruiter_name).toBe("Jane");
+    expect(page?.jobs[0].recruiter_from_triage).toBe(false);
+  });
+
+  it("createRecruiter posts the fields and invalidates the recruiters query", async () => {
+    const job = makeJob();
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      jsonResponse({ recruiter: { id: 3, name: "Jane", agency: "", email: "j@x.com" } }),
+    );
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.createRecruiter.mutateAsync({
+        name: "Jane",
+        agency: "",
+        email: "j@x.com",
+      });
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/recruiters/add",
+      expect.objectContaining({
+        body: JSON.stringify({ name: "Jane", agency: "", email: "j@x.com" }),
+      }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["recruiters"] });
+  });
 });
