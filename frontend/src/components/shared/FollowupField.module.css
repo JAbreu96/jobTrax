@@ -1,0 +1,75 @@
+/*
+ * Carried from src/static/job_views.css, which is where these rules already
+ * lived shared between both views (unlike the per-view overrides Trap B
+ * describes) -- so this is a straight port, no custom-property fork needed.
+ *
+ *   .followup-field           (~line 114)
+ *   .followup-chip.non-date   (~line 120)
+ *   .followup-chip button     (~line 129)
+ *   .followup-add             (~line 139)
+ *   .followup-add button      (~line 144)
+ *   .followup-add button:disabled (~line 153)
+ *
+ * `.followup-chip` itself (the base pill look) lived in each template's
+ * inline <style> rather than job_views.css, byte-identical between the two
+ * -- carried here too since it's the same rule either way.
+ */
+.followupField {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: 12px;
+}
+
+.chip.nonDate {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chip button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 999px;
+}
+
+.chip button:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.add button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.add button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
