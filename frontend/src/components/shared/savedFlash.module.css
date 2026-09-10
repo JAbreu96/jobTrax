@@ -1,0 +1,31 @@
+/*
+ * `.saved-flash { animation: flash 0.6s ease; }` from src/static/job_views.css
+ * (line ~94), carried here because a hashed CSS Module class stops matching
+ * that global selector -- the same trap Phase 2 hit for the markdown fade
+ * (see MarkdownField.module.css).
+ *
+ * The two views also disagreed on the keyframes themselves:
+ *   jobs.html:125    @keyframes flash { from {#d9f5df} to {transparent} }
+ *   kanban.html:129  @keyframes flash { from {#d9f5df} to {var(--bg)} }
+ * byte-identical except the `to` colour. Rather than ship two keyframes (or
+ * duplicate this file per view), the end colour is a CSS custom property,
+ * `--flash-end-color`, the same trick Phase 2 used for
+ * `--markdown-fade-color`. It defaults to `transparent` (jobs.html); the
+ * kanban view sets `--flash-end-color: var(--bg)` on the field wrapper.
+ *
+ * Every field component that flashes on save (DateField, DetailField,
+ * FollowupField, RecruiterField) imports this one module instead of each
+ * carrying its own copy.
+ */
+@keyframes flash {
+  from {
+    background: #d9f5df;
+  }
+  to {
+    background: var(--flash-end-color, transparent);
+  }
+}
+
+.savedFlash {
+  animation: flash 0.6s ease;
+}

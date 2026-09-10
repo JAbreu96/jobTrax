@@ -114,8 +114,13 @@ describe("jobFields", () => {
    *   Phase 2 (lib/markdown.ts + <MarkdownField>): renderMarkdownInto,
    *     appendInlineMarkdown, checkMarkdownOverflow, refreshMarkdownFields
    *   Phase 3 (useJobFieldEditing + <RecruiterField>): saveField, deleteJob,
-   *     loadRecruiters, recruiterBadge, saveJobRecruiter, createRecruiter,
-   *     create
+   *     loadRecruiters, saveJobRecruiter, createRecruiter, create
+   *   Phase 4/5 (the row and card themselves): recruiterBadge -- reassigned
+   *     out of Phase 3 once that phase was built. It renders the pill shown
+   *     against a job in the TABLE ROW and the KANBAN CARD, not anything in
+   *     the field panel, so it belongs with whichever phase renders those.
+   *     Its `.recruiter-pill.from-triage` rule (job_views.css:123) is still
+   *     uncarried and travels with it.
    *   Phase 0 (already ported, as api/client.ts): postJSON
    */
 
