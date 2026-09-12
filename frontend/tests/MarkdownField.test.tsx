@@ -89,4 +89,13 @@ describe("MarkdownField", () => {
     fireEvent.blur(screen.getByTestId("markdown-textarea"));
     expect(screen.getByTestId("markdown-rendered")).toBeInTheDocument();
   });
+
+  it("renders unclamped with no Show more button when expandable=false, even if the content would overflow", () => {
+    const { rerender } = render(<MarkdownField label="Notes" value="a" expandable={false} />);
+    const rendered = screen.getByTestId("markdown-rendered");
+    stubMeasurements(rendered, 200, 60); // would overflow if expandable were true
+    rerender(<MarkdownField label="Notes" value="a very long note that overflows" expandable={false} />);
+    expect(screen.queryByRole("button", { name: /show more/i })).toBeNull();
+    expect(rendered.className).toMatch(/expanded/);
+  });
 });

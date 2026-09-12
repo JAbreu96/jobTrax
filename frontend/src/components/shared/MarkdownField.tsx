@@ -55,6 +55,14 @@ export interface MarkdownFieldProps {
    */
   fadeColor?: string;
   /**
+   * When false, renders the full content with no clamp, fade, or "Show
+   * more/less" toggle -- for callers (e.g. JobDetail's content column) that
+   * want the field unclamped by design, not as something the reader reveals.
+   * Defaults to true, which preserves every existing caller's clamped
+   * behaviour unchanged.
+   */
+  expandable?: boolean;
+  /**
    * Called on blur, only when the edited value differs from `value`. Phase 2
    * does not persist anything itself -- Phase 3's save hook wires this up.
    */
@@ -67,6 +75,7 @@ export function MarkdownField({
   fieldClass = "",
   notesClass = "",
   fadeColor,
+  expandable = true,
   onSave,
 }: MarkdownFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -80,7 +89,7 @@ export function MarkdownField({
   // in after the first paint -- it's either there or not by the time the
   // browser shows anything.
   useLayoutEffect(() => {
-    if (isExpanded) return;
+    if (!expandable || isExpanded) return;
     const el = renderedRef.current;
     if (!el) return;
     setOverflowing(el.scrollHeight > el.clientHeight + 1);
@@ -88,7 +97,7 @@ export function MarkdownField({
     // rendered <div> unmounts while editing and remounts on blur -- a fresh
     // DOM node needs a fresh measurement even when `value` itself didn't
     // change (e.g. the edit was cancelled by re-typing the same text).
-  }, [value, isExpanded, isEditing]);
+  }, [value, isExpanded, isEditing, expandable]);
 
   // Re-measure on resize too -- e.g. the kanban modal going from display:none
   // to visible, or the window/column width changing. jsdom has no
@@ -96,6 +105,7 @@ export function MarkdownField({
   // stub), so this is guarded to no-op rather than throw when it's absent;
   // production browsers all have it.
   useLayoutEffect(() => {
+    if (!expandable) return;
     const el = renderedRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
@@ -104,7 +114,7 @@ export function MarkdownField({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isExpanded]);
+  }, [isExpanded, expandable]);
 
   const wrapperClassName = [fieldClass, notesClass, "markdown-field"].filter(Boolean).join(" ");
   const wrapperStyle: CSSProperties | undefined = fadeColor
@@ -124,7 +134,10 @@ export function MarkdownField({
     }
   }
 
-  const showToggle = overflowing || isExpanded;
+  // Unexpandable fields are always rendered in the "expanded" (unclamped)
+  // CSS state and never offer a toggle -- see the `expandable` prop doc.
+  const forceExpanded = !expandable || isExpanded;
+  const showToggle = expandable && (overflowing || isExpanded);
 
   return (
     <div className={wrapperClassName} style={wrapperStyle}>
@@ -150,7 +163,7 @@ export function MarkdownField({
         <div
           ref={renderedRef}
           data-testid="markdown-rendered"
-          className={[styles.rendered, isExpanded ? styles.expanded : ""].filter(Boolean).join(" ")}
+          className={[styles.rendered, forceExpanded ? styles.expanded : ""].filter(Boolean).join(" ")}
         >
           {parseMarkdown(value)}
         </div>
