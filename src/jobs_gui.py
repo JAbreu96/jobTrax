@@ -27,6 +27,7 @@ from src.job_agent import JobTrackerAgent  # noqa: E402
 from src.jobs_db import (  # noqa: E402
     INTERVIEW_TYPES,
     LIST_COLUMNS,
+    APPLIED_STATUSES,
     STATUS_ORDER,
     UPCOMING_WINDOW_DAYS,
     _connect,
@@ -461,7 +462,7 @@ def api_update_job():
             }), 409
 
     date_applied_value = None
-    if field == "status" and value == "Applied":
+    if field == "status" and value in APPLIED_STATUSES:
         row = db.execute(
             "SELECT date_applied FROM jobs WHERE company = ? AND date_added = ? "
             "AND position_title = ? AND link = ?",
