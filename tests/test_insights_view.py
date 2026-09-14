@@ -208,28 +208,23 @@ def _card(html):
     return card, table
 
 
-def test_the_page_never_tables_a_past_booking(db):
+def test_the_card_shows_nothing_for_a_round_already_held(db):
     """
-    The regression this file exists for: the card used to be handed
-    include_past=True and sorted past-dated rounds to the top of the table.
+    The card is only what is ahead. A past-dated round is a held round now -- it
+    belongs to the outcome table further down the page, not to "Coming up" --
+    so it appears nowhere in this card, not even as a count.
+
+    This replaces a pair of tests covering the state between those two: booked,
+    the date gone by, no outcome recorded. That state no longer exists.
     """
     _book(db, "Forgotten", -90)
     card, table = _card(_render(db))
+
+    assert "Forgotten" not in card
     assert "Forgotten" not in table
     assert "overdue" not in card
+    assert "no outcome recorded" not in card
     assert "Nothing booked." in card
-
-
-def test_a_past_booking_is_counted_even_though_it_is_not_tabled(db):
-    """
-    Hiding it from the table is the point; hiding it from the page is how a round
-    that happened and was never marked held stops existing. missing_rounds cannot
-    catch these -- the job has an interview row -- so this line is the only place.
-    """
-    _book(db, "Forgotten", -90)
-    card, table = _card(_render(db))
-    assert "1</span>\n      booked before today with no outcome recorded" in card
-    assert "Forgotten" in card and "Forgotten" not in table
 
 
 def test_the_count_line_is_absent_when_every_booking_is_ahead(db):

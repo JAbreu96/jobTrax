@@ -172,16 +172,31 @@ def test_the_list_order_is_read_from_an_index_not_sorted_by_hand(legacy):
     assert "TEMP B-TREE" not in plan.upper(), plan
 
 
-# --- interviews: occurred_date became nullable ------------------------------
+# --- interviews: occurred_date folded into scheduled_date and dropped --------
 
-def test_occurred_date_notnull_is_dropped(legacy):
-    """The exact failure that reached the live database."""
+def _columns(path, table):
+    import sqlite3
+    conn = sqlite3.connect(path)
+    try:
+        return [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    finally:
+        conn.close()
+
+
+def test_occurred_date_is_dropped_outright(legacy):
+    """
+    A round carries one date now. The older migration only relaxed NOT NULL on
+    occurred_date; rebuilding from the current DDL removes the column, which
+    takes the constraint with it, so a database predating either change lands in
+    the right place in one step.
+    """
     path = legacy(JOBS_V2, INTERVIEWS_V1,
                   interview_rows=[("Acme", "2026-01-01", "Engineer", "http://x/1",
                                    "technical", "2026-02-01")])
-    assert _notnull(path, "interviews", "occurred_date")  # precondition
+    assert "occurred_date" in _columns(path, "interviews")   # precondition
     jobs_db._connect()
-    assert not _notnull(path, "interviews", "occurred_date")
+    assert "occurred_date" not in _columns(path, "interviews")
+    assert "scheduled_date" in _columns(path, "interviews")
 
 
 def test_migrating_interviews_preserves_every_round(legacy):
@@ -193,7 +208,7 @@ def test_migrating_interviews_preserves_every_round(legacy):
     jobs_db._connect()
     rounds = jobs_db.get_interviews()
     assert len(rounds) == 2
-    assert {r["occurred_date"] for r in rounds} == {"2026-02-01", "2026-02-08"}
+    assert {r["scheduled_date"] for r in rounds} == {"2026-02-01", "2026-02-08"}
 
 
 def test_a_booking_can_be_inserted_after_migrating(legacy):

@@ -43,7 +43,7 @@ def _recent(days_ago=1):
 
 
 def _outcomes(db):
-    return {(r["interview_type"], r["occurred_date"]): r["outcome"]
+    return {(r["interview_type"], r["scheduled_date"]): r["outcome"]
             for r in db.classify_interviews()}
 
 
@@ -166,7 +166,7 @@ def test_sheet_sync_does_not_destroy_interview_history(db):
     routine sync would silently empty this table and still print "Sync complete".
     """
     key = _job(db, "Sync Co", "Rejected")
-    _round(db, key, "system_design", "2026-11-01")
+    _round(db, key, "system_design", _recent(30))
 
     conn = db._connect()
     try:
@@ -282,32 +282,44 @@ def test_a_held_round_is_not_upcoming(db):
     assert db.upcoming_interviews() == []
 
 
-def test_a_round_can_be_booked_and_then_held(db):
-    """The normal lifecycle: booked, then it happens, then it counts."""
+def test_a_round_is_booked_until_its_day_passes_then_it_counts(db):
+    """
+    The normal lifecycle, with no promotion step in the middle: a round ahead of
+    us is upcoming and counts toward nothing, and the same row past its date is
+    a held round. Two rows stand in for one row and the passage of time.
+    """
     key = _job(db, "Acme", "Phone Screen")
-    iid = db.add_interview(interview_type="phone_screen",
-                           scheduled_date=_recent(1), **key)
+    db.add_interview(interview_type="phone_screen", scheduled_date=_recent(-1), **key)
+
     assert db.classify_interviews() == []
+    assert len(db.upcoming_interviews()) == 1
 
-    assert db.mark_interview_occurred(iid) is True
+    db.add_interview(interview_type="technical", scheduled_date=_recent(1), **key)
+
     assert len(db.classify_interviews()) == 1
-    assert db.upcoming_interviews() == []
+    assert len(db.upcoming_interviews()) == 1
 
 
-def test_marking_occurred_defaults_to_the_scheduled_date(db):
-    key = _job(db, "Acme", "Phone Screen")
-    iid = db.add_interview(interview_type="phone_screen",
-                           scheduled_date=_recent(4), **key)
-    db.mark_interview_occurred(iid)
-    assert db.get_interviews()[0]["occurred_date"] == _recent(4)
-
-
-def test_marking_occurred_twice_is_refused(db):
+def test_the_deprecated_promotion_shim_leaves_the_date_alone(db):
+    """Nothing to promote any more, so calling it without a date changes nothing."""
     key = _job(db, "Acme", "Phone Screen")
     iid = db.add_interview(interview_type="phone_screen",
                            scheduled_date=_recent(4), **key)
     assert db.mark_interview_occurred(iid) is True
-    assert db.mark_interview_occurred(iid) is False
+    assert db.get_interviews()[0]["scheduled_date"] == _recent(4)
+
+
+def test_the_deprecated_promotion_shim_can_still_correct_a_date(db):
+    """Its one remaining use: the round ran on a different day than it was booked."""
+    key = _job(db, "Acme", "Phone Screen")
+    iid = db.add_interview(interview_type="phone_screen",
+                           scheduled_date=_recent(4), **key)
+    assert db.mark_interview_occurred(iid, _recent(2)) is True
+    assert db.get_interviews()[0]["scheduled_date"] == _recent(2)
+
+
+def test_the_deprecated_promotion_shim_reports_an_unknown_round(db):
+    assert db.mark_interview_occurred(9999) is False
 
 
 def test_the_upcoming_query_runs_on_sqlite(db):
@@ -342,17 +354,22 @@ def test_the_upcoming_query_filters_the_past_without_a_company(db):
     assert db.get_upcoming_interviews() == []
 
 
-def test_a_past_booking_never_marked_held_is_hidden_by_default(db):
+def test_a_past_round_is_not_upcoming_but_is_still_retrievable(db):
     """
-    Either forgotten paperwork or a call that never happened. Hidden from the
-    normal view, but retrievable — silently dropping it is how the log drifts
-    out of sync with reality.
+    It is a held round, so it is not in the upcoming view -- but include_past
+    still returns it. Silently dropping it is how the log drifts out of sync
+    with reality, and this is how a caller assembles a full booking history.
+
+    Nothing is `overdue` any more: that flag described a booking whose date had
+    passed with no outcome recorded, and a past round now simply happened.
     """
     key = _job(db, "Acme", "Phone Screen")
     db.add_interview(interview_type="phone_screen", scheduled_date=_recent(9), **key)
+
     assert db.upcoming_interviews() == []
-    stale = db.upcoming_interviews(include_past=True)
-    assert len(stale) == 1 and stale[0]["overdue"] is True
+    history = db.upcoming_interviews(include_past=True)
+    assert len(history) == 1
+    assert history[0]["overdue"] is False
 
 
 def test_a_round_with_neither_date_is_rejected(db):

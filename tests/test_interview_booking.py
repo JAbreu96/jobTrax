@@ -225,15 +225,19 @@ def test_the_backfill_creates_no_job_rows(db):
     assert len(db.get_all_jobs(include_archived=True)) == before
 
 
-def test_a_future_booking_lands_as_scheduled(db):
+def test_a_future_booking_is_still_ahead(db):
+    """One date either way -- what separates the two cases is only the date."""
     rounds = [{"date": TODAY + datetime.timedelta(days=9), "time": "11:45"}]
     _apply(db, rounds, (JOB["company"], JOB["date_added"], JOB["position_title"], JOB["link"]))
-    row = db.get_interviews(**KEY)[0]
-    assert row["scheduled_date"] == SOON and not row["occurred_date"]
+
+    assert db.get_interviews(**KEY)[0]["scheduled_date"] == SOON
+    assert len(db.get_upcoming_interviews(**KEY)) == 1
 
 
-def test_a_past_booking_lands_as_occurred(db):
-    rounds = [{"date": TODAY - datetime.timedelta(days=4), "time": "10:30"}]
+def test_a_past_booking_is_a_held_round(db):
+    when = TODAY - datetime.timedelta(days=4)
+    rounds = [{"date": when, "time": "10:30"}]
     _apply(db, rounds, (JOB["company"], JOB["date_added"], JOB["position_title"], JOB["link"]))
-    row = db.get_interviews(**KEY)[0]
-    assert row["occurred_date"] and not row["scheduled_date"]
+
+    assert db.get_interviews(**KEY)[0]["scheduled_date"] == when.isoformat()
+    assert db.get_upcoming_interviews(**KEY) == []
