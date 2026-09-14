@@ -507,10 +507,8 @@ def api_update_job():
 def insights_view():
     # Only what is ahead. This used to ask for include_past=True and split the
     # result on `overdue`, because a booking whose date went by with no outcome
-    # recorded had to be counted somewhere. That state no longer exists -- a past
-    # round simply happened and belongs to the outcome stats -- so there is
-    # nothing left to split off. `past_bookings` stays until the template drops
-    # its branch in the next phase.
+    # recorded had to be counted somewhere. That state no longer exists: a past
+    # round simply happened, and belongs to the outcome table further down.
     booked = upcoming_interviews()
     return render_template(
         "insights.html",
@@ -524,7 +522,6 @@ def insights_view():
         coverage=recruiter_coverage(),
         silence=job_silence_stats(),
         upcoming=booked,
-        past_bookings=[],
         upcoming_window=UPCOMING_WINDOW_DAYS,
         missing_rounds=jobs_missing_interview_rows(),
     )
@@ -764,8 +761,10 @@ def api_add_interview():
     position_title = (payload.get("position_title") or "").strip()
     link = (payload.get("link") or "").strip()
     interview_type = (payload.get("interview_type") or "").strip()
-    occurred_date = (payload.get("occurred_date") or "").strip()
-    scheduled_date = (payload.get("scheduled_date") or "").strip()
+    # occurred_date is still read so an older client posting it keeps working;
+    # both names mean the one date the round is on.
+    scheduled_date = ((payload.get("scheduled_date") or "").strip()
+                      or (payload.get("occurred_date") or "").strip())
     type_label = (payload.get("type_label") or "").strip()
     loop_id = (payload.get("loop_id") or "").strip()
     notes = (payload.get("notes") or "").strip()
@@ -785,23 +784,16 @@ def api_add_interview():
         return jsonify({"error": f"interview_type must be one of: {', '.join(INTERVIEW_TYPES)}"}), 400
     if interview_type == "other" and not type_label:
         return jsonify({"error": "type_label is required when interview_type is 'other'"}), 400
-    # The two dates are the two states a round can be in, and it is exactly one
-    # of them. jobs_db.add_interview already rejects neither; both is rejected
-    # here because it is the more confusing error -- upcoming_interviews() reads
-    # a round with an occurred_date as done, so a row carrying both claims to be
-    # simultaneously booked and held, and silently vanishes from "Coming up".
-    if not occurred_date and not scheduled_date:
-        return jsonify({"error": "one of occurred_date (it happened) or "
-                                 "scheduled_date (it is booked) is required"}), 400
-    if occurred_date and scheduled_date:
-        return jsonify({"error": "give occurred_date or scheduled_date, not both — "
-                                 "mark a booked round as held instead"}), 400
+    # One date, so there is no longer a pair to disagree with each other. The
+    # rejection of "both dates at once" went with them.
+    if not scheduled_date:
+        return jsonify({"error": "scheduled_date (the day the round is on) "
+                                 "is required"}), 400
 
     try:
         new_id = add_interview(
             company=company, date_added=date_added, position_title=position_title,
-            link=link, interview_type=interview_type, occurred_date=occurred_date,
-            scheduled_date=scheduled_date,
+            link=link, interview_type=interview_type, scheduled_date=scheduled_date,
             type_label=type_label, loop_id=loop_id, self_rating=rating, notes=notes,
         )
     except ValueError as exc:
