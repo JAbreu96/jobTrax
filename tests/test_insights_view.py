@@ -259,3 +259,40 @@ def test_the_empty_state_stays_one_line(db):
     assert "Nothing booked." in html
     coming_up = html.split("Coming up")[1].split("source-bar")[0]
     assert "<table>" not in coming_up
+
+
+# --- rounds recorded twice ---------------------------------------------------
+
+def _dup_pair(db, company="NACE Partners", when="2026-08-25"):
+    key = dict(company=company, date_added="2026-08-19",
+               position_title="Product Engineer", link="thread-dup")
+    db.upsert_job({**key, "status": "Phone Screen"})
+    return [db.add_interview(**key, interview_type="recruiter_screen",
+                             scheduled_date=when) for _ in range(2)]
+
+
+def test_a_double_recorded_round_is_surfaced_for_deletion(db):
+    _dup_pair(db)
+    html = _render(db)
+
+    assert "recorded twice" in html
+    assert "NACE Partners" in html
+    assert 'class="dup-del"' in html
+
+
+def test_the_card_is_absent_when_no_round_is_doubled(db):
+    key = dict(company="Solo Co", date_added="2026-08-19",
+               position_title="Product Engineer", link="thread-solo")
+    db.upsert_job({**key, "status": "Phone Screen"})
+    db.add_interview(**key, interview_type="recruiter_screen",
+                     scheduled_date="2026-08-25")
+
+    assert "recorded twice" not in _render(db)
+
+
+def test_the_delete_button_targets_the_newer_copy(db):
+    first, second = _dup_pair(db)
+    html = _render(db)
+
+    assert f'data-dup-id="{second}"' in html
+    assert f'data-dup-id="{first}"' not in html

@@ -52,6 +52,7 @@ from src.jobs_db import (  # noqa: E402
     job_silence_stats,
     upcoming_interviews,
     jobs_missing_interview_rows,
+    duplicate_interview_rounds,
     recruiter_coverage,
     interview_stats,
     upsert_job,
@@ -524,6 +525,7 @@ def insights_view():
         upcoming=booked,
         upcoming_window=UPCOMING_WINDOW_DAYS,
         missing_rounds=jobs_missing_interview_rows(),
+        duplicate_rounds=duplicate_interview_rounds(),
     )
 
 
@@ -796,6 +798,11 @@ def api_add_interview():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"id": new_id})
+
+
+@app.route("/api/interviews/duplicates")
+def api_interview_duplicates():
+    return jsonify(duplicate_interview_rounds())
 
 
 @app.route("/api/interviews/delete", methods=["POST"])

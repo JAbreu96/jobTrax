@@ -181,10 +181,9 @@
     {% endif %}
     <div class="note">
       The {{ upcoming_window }}-day window narrows the table, never the truth: anything
-      booked further out is counted on the line above. A booking whose date has already
-      passed is not upcoming and never appears in this table — it is counted below
-      instead, because a round that happened and was never marked held is the one thing
-      this page must not lose track of.
+      booked further out is counted on the line above. A round whose date has already
+      passed is not upcoming and never appears here — it is a round that happened, and
+      it counts toward the outcomes further down the page.
     </div>
     {% elif later %}
     <p class="muted" style="font-size:13px;margin:0;">
@@ -202,6 +201,29 @@
       and {{ (missing_rounds | length) - 3 }} more{% endif %}.
       A booking that lives only in a row's notes cannot appear above.
     </p>
+    {% endif %}
+    {% if duplicate_rounds %}
+    <p class="muted" style="font-size:13px;margin:8px 0 0;" id="dup-rounds">
+      <span class="rate bad">{{ duplicate_rounds | length }}</span>
+      recorded twice — same role, same day, same round type. Every round past its date
+      counts toward the rates below, so a repeat is counted twice. Nothing is removed
+      automatically: two identical rounds in one day is unlikely, not impossible.
+    </p>
+    <table>
+      <thead><tr><th>Company</th><th>Role</th><th>Round</th><th>Date</th><th>Copies</th><th></th></tr></thead>
+      <tbody>
+      {% for g in duplicate_rounds %}
+        <tr data-dup-id="{{ g.rounds[-1].id }}">
+          <td>{{ g.company }}</td>
+          <td>{{ g.position_title }}</td>
+          <td>{{ g.interview_type | replace("_", " ") }}</td>
+          <td>{{ g.scheduled_date }}</td>
+          <td class="num">{{ g.rounds | length }}</td>
+          <td><button type="button" class="dup-del" data-id="{{ g.rounds[-1].id }}">Delete one</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
     {% endif %}
   </div>
 
@@ -733,6 +755,30 @@ async function postJSON(url, body) {
 const addToggle = document.getElementById('addRecruiterToggle');
 const addForm = document.getElementById('addRecruiterForm');
 if (addToggle) {
+  // Deleting one copy of a double-recorded round. Always the newest row of the
+  // group -- the earlier one is the round as first recorded, and the repeat is
+  // what arrived after. Removes the row rather than reloading, so a run of
+  // deletions does not re-render the whole page between each one.
+  for (const btn of document.querySelectorAll('.dup-del')) {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const row = btn.closest('tr');
+      try {
+        const res = await fetch('/api/interviews/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: Number(btn.dataset.id) }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'delete failed');
+        row.remove();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Failed — retry';
+        console.error(err);
+      }
+    });
+  }
+
   addToggle.addEventListener('click', () => {
     addForm.hidden = !addForm.hidden;
     if (!addForm.hidden) document.getElementById('newRecruiterName').focus();

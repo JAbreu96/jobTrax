@@ -2391,3 +2391,40 @@ def jobs_missing_interview_rows() -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def duplicate_interview_rounds() -> list[dict]:
+    """
+    Rounds recorded more than once: same job, same day, same type.
+
+    Triage records a round from whatever mail names it, and the same call gets
+    named twice often enough -- a confirmation and then a reminder, or a thread
+    re-read after the watermark moved. Nothing noticed, because a duplicate is
+    indistinguishable from a real round except by looking at its neighbours.
+
+    All three parts of the key are needed to avoid accusing real rounds: two
+    types on one day is a same-day loop, the same type on two days is a process
+    moving along, and one company can hold two postings interviewing in parallel.
+    What is left is a genuine repeat -- or, rarely, two identical rounds that
+    really did happen on one day, which is why nothing here deletes anything.
+    The groups are returned for a human to resolve.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    for r in get_interviews():
+        key = (r["company"], r["date_added"], r["position_title"], r["link"],
+               r["scheduled_date"], r["interview_type"])
+        groups.setdefault(key, []).append(r)
+
+    return [
+        {
+            "company": key[0],
+            "date_added": key[1],
+            "position_title": key[2],
+            "link": key[3],
+            "scheduled_date": key[4],
+            "interview_type": key[5],
+            "rounds": rounds,
+        }
+        for key, rounds in sorted(groups.items(), key=lambda kv: (kv[0][4] or "", kv[0][0]))
+        if len(rounds) > 1
+    ]
