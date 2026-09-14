@@ -54,14 +54,14 @@ def _row(db, company):
 def test_logged_interview_gone_quiet_is_ghosted(db):
     key = _job(db, "Acme", status="Tracking")
     db.add_interview(interview_type="technical",
-                     occurred_date=_ago(jobs_db.GHOSTED_AFTER_DAYS + 5), **key)
+                     scheduled_date=_ago(jobs_db.GHOSTED_AFTER_DAYS + 5), **key)
     assert _state(db, "Acme") == "ghosted"
 
 
 def test_recent_interview_is_still_waiting(db):
     key = _job(db, "Acme", status="Tracking")
     db.add_interview(interview_type="technical",
-                     occurred_date=_ago(jobs_db.GHOSTED_AFTER_DAYS - 5), **key)
+                     scheduled_date=_ago(jobs_db.GHOSTED_AFTER_DAYS - 5), **key)
     assert _state(db, "Acme") == "waiting"
 
 
@@ -144,7 +144,7 @@ def test_tracking_row_never_applied_is_not_classified(db):
 
 def test_rejected_is_never_ghosted_or_no_response(db):
     key = _job(db, "Acme", status="Rejected", applied_days=200)
-    db.add_interview(interview_type="technical", occurred_date=_ago(150), **key)
+    db.add_interview(interview_type="technical", scheduled_date=_ago(150), **key)
     assert _row(db, "Acme") is None
 
 

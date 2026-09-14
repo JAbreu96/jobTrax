@@ -90,7 +90,7 @@ def test_detail_skips_the_summary_when_the_client_has_it(client):
 def test_detail_returns_rounds_for_the_job(client):
     jobs_db.add_interview(company="Acme", date_added="2026-01-01",
                           position_title="Engineer", link="",
-                          interview_type="technical", occurred_date="2026-02-01")
+                          interview_type="technical", scheduled_date="2026-02-01")
     data = client.get("/api/jobs/detail", query_string={
         "company": "Acme", "date_added": "2026-01-01",
         "position_title": "Engineer", "link": "", "summary": "0",
@@ -101,7 +101,7 @@ def test_detail_returns_rounds_for_the_job(client):
 def test_detail_does_not_leak_another_jobs_rounds(client):
     jobs_db.add_interview(company="Acme", date_added="2026-01-01",
                           position_title="Engineer", link="",
-                          interview_type="technical", occurred_date="2026-02-01")
+                          interview_type="technical", scheduled_date="2026-02-01")
     data = client.get("/api/jobs/detail", query_string={
         "company": "Globex", "date_added": "2026-01-01",
         "position_title": "Engineer", "link": "", "summary": "0",
