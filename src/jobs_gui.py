@@ -506,10 +506,13 @@ def api_update_job():
 
 @app.route("/insights")
 def insights_view():
-    # One query, split two ways. The card shows only what is ahead, but a booking
-    # whose date went by with no outcome recorded has to be counted somewhere --
-    # it is invisible to missing_rounds, which only sees jobs with no round at all.
-    booked = upcoming_interviews(include_past=True)
+    # Only what is ahead. This used to ask for include_past=True and split the
+    # result on `overdue`, because a booking whose date went by with no outcome
+    # recorded had to be counted somewhere. That state no longer exists -- a past
+    # round simply happened and belongs to the outcome stats -- so there is
+    # nothing left to split off. `past_bookings` stays until the template drops
+    # its branch in the next phase.
+    booked = upcoming_interviews()
     return render_template(
         "insights.html",
         stats=interview_stats(),
@@ -521,8 +524,8 @@ def insights_view():
         recruiter_roles=get_recruiter_jobs(),
         coverage=recruiter_coverage(),
         silence=job_silence_stats(),
-        upcoming=[r for r in booked if not r["overdue"]],
-        past_bookings=[r for r in booked if r["overdue"]],
+        upcoming=booked,
+        past_bookings=[],
         upcoming_window=UPCOMING_WINDOW_DAYS,
         missing_rounds=jobs_missing_interview_rows(),
     )

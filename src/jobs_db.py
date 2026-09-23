@@ -919,7 +919,7 @@ INTERVIEW_TYPES = [
 
 INTERVIEW_COLUMNS = [
     "id", "company", "date_added", "position_title", "link",
-    "interview_type", "type_label", "loop_id", "occurred_date",
+    "interview_type", "type_label", "loop_id", "scheduled_date",
     "self_rating", "notes",
 ]
 
@@ -959,11 +959,19 @@ _INTERVIEWS_DDL = """
             type_label     TEXT,
             loop_id        TEXT,
             scheduled_date TEXT,
-            occurred_date  TEXT,
             self_rating    INTEGER,
             notes          TEXT
         )
 """
+
+# The one date a round carries: the day it is booked for. Past it, the round
+# happened; before it, it is still ahead. There is deliberately no second column
+# recording that it went ahead, and no flag saying it did not -- a round that
+# never happened is deleted, not annotated. The table used to carry
+# `occurred_date` beside this one, which made a third state possible: booked,
+# the date long gone, nobody having promoted it. Nothing swept for those, so 24
+# accumulated and the interview stats ran on 13 of 40 rounds.
+INTERVIEW_DATE_COLUMN = "scheduled_date"
 
 
 def _ensure_interviews_schema(conn: sqlite3.Connection) -> None:
@@ -982,7 +990,7 @@ def _ensure_interviews_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE interviews ADD COLUMN scheduled_date TEXT")
     except _SCHEMA_EXC:
         pass  # column already exists
-    _migrate_interviews_nullable_occurred(conn)
+    _migrate_interviews_collapse_dates(conn)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_interviews_job "
         "ON interviews (company, date_added, position_title, link)"
@@ -991,31 +999,36 @@ def _ensure_interviews_schema(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_interviews_loop ON interviews (loop_id)")
 
 
-def _migrate_interviews_nullable_occurred(conn: sqlite3.Connection) -> None:
+def _migrate_interviews_collapse_dates(conn: sqlite3.Connection) -> None:
     """
-    Drops NOT NULL from interviews.occurred_date on databases created before
-    scheduled rounds existed.
+    Folds interviews.occurred_date into scheduled_date and drops the column.
 
-    CREATE TABLE IF NOT EXISTS does not alter an existing table and SQLite cannot
-    ALTER a column constraint, so the table has to be rebuilt. Caught only
-    against the live DB — every test builds a fresh one from the current DDL and
-    so never sees the old constraint.
+    A round now carries one date (see INTERVIEW_DATE_COLUMN). Where the two
+    disagree the round was rescheduled, and the day it actually ran is the one
+    worth keeping, so occurred_date wins. A blank occurred_date means the round
+    was only ever booked, and its booking date carries over unchanged.
 
-    No-op once migrated.
+    This supersedes the older migration that merely dropped NOT NULL from
+    occurred_date: rebuilding from the current DDL removes the column outright,
+    which takes any constraint on it along too. Databases predating either
+    change land in the right place in one step.
+
+    CREATE TABLE IF NOT EXISTS does not alter an existing table and SQLite's
+    DROP COLUMN refuses a column carrying constraints on some versions, so the
+    table is rebuilt. No-op once migrated.
     """
     cols = conn.execute("PRAGMA table_info(interviews)").fetchall()
-    if not cols:
-        return
-    # row[1] = name, row[3] = notnull
-    if not any(row[1] == "occurred_date" and row[3] for row in cols):
+    if not cols or not any(row[1] == "occurred_date" for row in cols):
         return
 
+    conn.execute("DROP TABLE IF EXISTS interviews_migrated")
     conn.execute(_INTERVIEWS_DDL.replace("interviews", "interviews_migrated"))
     conn.execute(
         "INSERT INTO interviews_migrated (id, company, date_added, position_title, link, "
-        " interview_type, type_label, loop_id, scheduled_date, occurred_date, self_rating, notes) "
+        " interview_type, type_label, loop_id, scheduled_date, self_rating, notes) "
         "SELECT id, company, date_added, position_title, link, interview_type, type_label, "
-        "       loop_id, scheduled_date, occurred_date, self_rating, notes FROM interviews"
+        "       loop_id, COALESCE(NULLIF(occurred_date, ''), scheduled_date), "
+        "       self_rating, notes FROM interviews"
     )
     conn.execute("DROP TABLE interviews")
     conn.execute("ALTER TABLE interviews_migrated RENAME TO interviews")
@@ -1027,34 +1040,25 @@ def add_interview(company: str, date_added: str, position_title: str, link: str,
                   loop_id: str = "", self_rating: Optional[int] = None,
                   notes: str = "", scheduled_date: str = "") -> int:
     """
-    Records one interview round — booked, held, or both. Returns the new row id.
+    Records one interview round, booked or held. Returns the new row id.
 
-    The two dates mean different things and only one of them can carry weight:
+    A round carries one date: the day it is on. If that day has passed the round
+    happened, and it counts toward the outcomes and rates; if it has not, the
+    round is still ahead and counts toward nothing. A round that was booked and
+    never took place is deleted rather than recorded as not having happened.
 
-      * `scheduled_date` — it is on the calendar. Says nothing about whether it
-        happens; invites get cancelled and rescheduled constantly.
-      * `occurred_date`  — it took place. ONLY this makes a round count toward
-        any outcome or rate.
-
-    A row with a scheduled_date and no occurred_date is upcoming, and
-    classify_interviews() skips it entirely: an invite is not evidence a round
-    happened, and counting it would inflate the denominator with rounds that may
-    never occur. When it does happen, set occurred_date via
-    mark_interview_occurred().
-
-    At least one date is required — a round that is neither booked nor held is
-    not an event.
+    `occurred_date` is accepted as a deprecated alias for the same field and
+    wins when both are given, so callers written against the two-date table keep
+    working until they are moved over. A date is required either way — a round
+    with no day is not an event.
     """
     if interview_type not in INTERVIEW_TYPES:
         raise ValueError(
             f"Unknown interview_type '{interview_type}'. One of: {', '.join(INTERVIEW_TYPES)}"
         )
-    occurred_date = (occurred_date or "").strip()
-    scheduled_date = (scheduled_date or "").strip()
-    if not occurred_date and not scheduled_date:
-        raise ValueError(
-            "one of occurred_date (it happened) or scheduled_date (it is booked) is required."
-        )
+    scheduled_date = (occurred_date or "").strip() or (scheduled_date or "").strip()
+    if not scheduled_date:
+        raise ValueError("scheduled_date (the day the round is on) is required.")
     if self_rating is not None and not (1 <= int(self_rating) <= 5):
         raise ValueError("self_rating must be between 1 and 5, or None.")
 
@@ -1062,12 +1066,11 @@ def add_interview(company: str, date_added: str, position_title: str, link: str,
     try:
         cur = conn.execute(
             "INSERT INTO interviews (company, date_added, position_title, link, "
-            "interview_type, type_label, loop_id, scheduled_date, occurred_date, "
+            "interview_type, type_label, loop_id, scheduled_date, "
             "self_rating, notes) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (company, date_added, position_title, link, interview_type,
-             type_label or None, loop_id or None, scheduled_date or None,
-             occurred_date or None,
+             type_label or None, loop_id or None, scheduled_date,
              int(self_rating) if self_rating is not None else None, notes or None),
         )
         conn.commit()
@@ -1110,9 +1113,7 @@ def get_interviews(company: str = "", date_added: str = "", position_title: str 
                     clauses.append(f"{col} = ?")
                     params.append(val)
             query += " WHERE " + " AND ".join(clauses)
-        # COALESCE so an upcoming round (no occurred_date) sorts by when it is
-        # booked instead of clustering at the top as a NULL.
-        query += " ORDER BY COALESCE(occurred_date, scheduled_date) ASC, id ASC"
+        query += " ORDER BY scheduled_date ASC, id ASC"
         return [dict(r) for r in conn.execute(query, params).fetchall()]
     finally:
         conn.close()
@@ -1120,14 +1121,16 @@ def get_interviews(company: str = "", date_added: str = "", position_title: str 
 def get_upcoming_interviews(company: str = "", date_added: str = "", position_title: str = "",
                             link: str = "", include_past: bool = False) -> list[dict]:
     """
-    Rounds that are booked and not yet held, soonest first. With no arguments,
-    returns every one of them; pass the full job key to scope to one posting.
+    Rounds still ahead, soonest first. With no arguments, returns every one of
+    them; pass the full job key to scope to one posting.
 
-    "Booked and not yet held" is the pair of clauses below: a scheduled_date, and
-    no occurred_date. By default the date must also be today or later, so a
-    booking whose date has passed with nothing recorded against it does not come
-    back as though it were still ahead. Pass include_past=True to retrieve those
-    too -- they are the forgotten paperwork, and they still exist.
+    A round is ahead while its date is today or later -- today's round stays here
+    until the day is over, because a 5pm call has not happened at 9am. Past that
+    it is a held round and belongs to the outcome stats instead. The two are
+    exclusive by construction, which is what stops a round being counted as both.
+
+    include_past=True widens this to every round regardless of date, which is how
+    callers assemble a full booking history rather than only what is ahead.
 
     Dates are stored as ISO YYYY-MM-DD text, which orders and compares correctly
     as a string. Today's date is bound as a parameter rather than asked of SQLite,
@@ -1137,7 +1140,7 @@ def get_upcoming_interviews(company: str = "", date_added: str = "", position_ti
     if not conn:
         return []
     try:
-        clauses = ["COALESCE(scheduled_date, '') <> ''", "COALESCE(occurred_date, '') = ''"]
+        clauses = ["COALESCE(scheduled_date, '') <> ''"]
         params: list = []
         if not include_past:
             clauses.append("scheduled_date >= ?")
@@ -1184,10 +1187,14 @@ def classify_interviews() -> list[dict]:
     onsite by date would otherwise mark the earlier ones 'advanced' for merely
     having siblings and pin the whole loop's failure on whichever one sorted last.
     """
-    # A booked-but-not-held round is not evidence of anything. Including it
-    # would put rounds that may never occur into the denominator, which is the
-    # exact error `occurred_date` exists to prevent.
-    rows = [r for r in get_interviews() if (r.get("occurred_date") or "").strip()]
+    # A round still ahead is not evidence of anything, so only rounds whose day
+    # has already passed are classified. Strictly passed: today's round is not
+    # counted until the day is over, which is the same boundary
+    # get_upcoming_interviews draws, from the other side.
+    _today = date.today().isoformat()
+    rows = [r for r in get_interviews()
+            if (r.get("scheduled_date") or "").strip()
+            and r["scheduled_date"] < _today]
     if not rows:
         return []
 
@@ -1207,9 +1214,9 @@ def classify_interviews() -> list[dict]:
         units: dict[tuple, list[dict]] = {}
         for r in job_rows:
             units.setdefault(_unit_key(r), []).append(r)
-        # get_interviews() already sorted by occurred_date, so ordering units by
-        # their earliest round preserves that order across loops.
-        ordered = sorted(units.values(), key=lambda u: (u[0]["occurred_date"], u[0]["id"]))
+        # get_interviews() already sorted by scheduled_date, so ordering units
+        # by their earliest round preserves that order across loops.
+        ordered = sorted(units.values(), key=lambda u: (u[0]["scheduled_date"], u[0]["id"]))
 
         status = status_by_key.get(key)
         for i, unit in enumerate(ordered):
@@ -1224,7 +1231,7 @@ def classify_interviews() -> list[dict]:
             else:
                 # Nothing followed this round and the job never closed. Past the
                 # silence threshold that is a ghosting, not an open process.
-                last_seen = max(_parse_date(r["occurred_date"]) or date.min for r in unit)
+                last_seen = max(_parse_date(r["scheduled_date"]) or date.min for r in unit)
                 idle = (date.today() - last_seen).days if last_seen != date.min else 0
                 outcome = "ghosted" if idle >= GHOSTED_AFTER_DAYS else "awaiting_outcome"
             for r in unit:
@@ -2235,10 +2242,10 @@ def _relationship_index(conn: sqlite3.Connection) -> dict:
 
     staged: dict[tuple, tuple] = {}
     for r in conn.execute(
-        "SELECT company, date_added, position_title, link, occurred_date FROM interviews"
+        "SELECT company, date_added, position_title, link, scheduled_date FROM interviews"
     ):
         note((r["company"], r["date_added"], r["position_title"], r["link"]),
-             r["occurred_date"], "interview", staged)
+             r["scheduled_date"], "interview", staged)
 
     for r in conn.execute(
         "SELECT rj.company, rj.date_added, rj.position_title, rj.link, "
@@ -2370,17 +2377,17 @@ def upcoming_interviews(include_past: bool = False) -> list[dict]:
     nowhere to live: two real calls were sitting in free-text `notes` where no
     query could see them.
 
-    A scheduled round already in the past with no `occurred_date` is either
-    forgotten paperwork or a call that never happened. It is not shown by
-    default -- it is not upcoming -- but `include_past=True` still retrieves it,
-    marked `overdue`, so the log can be reconciled against reality.
+    `overdue` is retained as a key and is now always False: it described a round
+    whose date had passed with no outcome recorded, and that state no longer
+    exists -- a past round simply happened. Callers still reading it get the
+    honest answer rather than a KeyError, and it goes away with them.
     """
     today = date.today()
     out = []
     for row in get_upcoming_interviews(include_past=include_past):
         when = _parse_date(row["scheduled_date"])
         row["days_away"] = (when - today).days if when else None
-        row["overdue"] = row["days_away"] is not None and row["days_away"] < 0
+        row["overdue"] = False
         out.append(row)
     return out
 
@@ -2434,27 +2441,29 @@ def jobs_missing_interview_rows() -> list[dict]:
 
 def mark_interview_occurred(interview_id: int, occurred_date: str = "") -> bool:
     """
-    Promotes a booked round to one that happened. Returns False if the id is
-    unknown or the round already has an occurred_date.
+    DEPRECATED. There is no longer a promotion step: a round whose date has
+    passed has happened, so the only thing left for this to do is correct the
+    date when a round ran on a different day than it was booked for.
 
-    Defaults to the scheduled date, since the overwhelmingly common case is a
-    call that ran when it was booked to run.
+    Kept as a shim so callers written against the two-date table keep working;
+    it goes away with them. Returns False only if the id is unknown. Calling it
+    without a date is a no-op that succeeds -- the round already carries the day
+    that decides the question.
     """
     conn = _connect()
     if not conn:
         return False
     try:
         row = conn.execute(
-            "SELECT scheduled_date, occurred_date FROM interviews WHERE id = ?",
-            (interview_id,),
+            "SELECT scheduled_date FROM interviews WHERE id = ?", (interview_id,)
         ).fetchone()
-        if not row or (row["occurred_date"] or "").strip():
+        if not row:
             return False
-        when = (occurred_date or "").strip() or (row["scheduled_date"] or "").strip()
-        if not when:
-            return False
-        conn.execute("UPDATE interviews SET occurred_date = ? WHERE id = ?", (when, interview_id))
-        conn.commit()
+        when = (occurred_date or "").strip()
+        if when and when != (row["scheduled_date"] or "").strip():
+            conn.execute("UPDATE interviews SET scheduled_date = ? WHERE id = ?",
+                         (when, interview_id))
+            conn.commit()
         return True
     finally:
         conn.close()
