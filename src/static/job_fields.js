@@ -76,6 +76,38 @@ const JobFields = (function () {
     };
   }
 
+  // --- Deeplinked search ---------------------------------------------------
+  // Insights links to the table with ?q=<company>, and the table writes the
+  // search box back into the URL as it is typed. Kept here, beside rowKey,
+  // because the templates that use this have no test harness of their own.
+  //
+  // Every helper takes and returns the query string rather than touching
+  // window.location, so the two directions can be tested without a browser.
+
+  function searchFromQuery(search) {
+    return (new URLSearchParams(search || '').get('q') || '').trim();
+  }
+
+  function queryWithSearch(search, q) {
+    // Rebuilt from the existing params, never replaced: a search typed after
+    // arriving from the funnel must not drop ?stage, which is what keeps the
+    // archived rows the funnel counted in the list.
+    const params = new URLSearchParams(search || '');
+    const term = (q || '').trim();
+    if (term) params.set('q', term);
+    else params.delete('q');
+    const out = params.toString();
+    return out ? '?' + out : '';
+  }
+
+  function wantsArchived(search) {
+    // A stage link matches the funnel, which counts archived rows. A ?q= link
+    // from Insights says so explicitly instead, so that a search the user
+    // *types* never quietly widens the population underneath them.
+    const params = new URLSearchParams(search || '');
+    return params.has('stage') || params.get('include_archived') === '1';
+  }
+
   /*
    * The columns the table can be sorted by, and the job field each reads.
    *
@@ -1020,6 +1052,9 @@ const JobFields = (function () {
     parseFollowupLog,
     serializeFollowupLog,
     jobKeyFields,
+    searchFromQuery,
+    queryWithSearch,
+    wantsArchived,
     SORT_COLUMNS,
     compareJobs,
     nextSortDirection,
