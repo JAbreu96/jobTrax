@@ -91,6 +91,15 @@ STATUS_ORDER = [
     "System Design", "Behavioral", "Offer", "Accepted", "Rejected",
 ]
 
+# Statuses that mean an application exists, so update_status can date one that
+# was never dated. Derived from the ordered list above so it cannot drift.
+# "Rejected" is deliberately excluded even though it ranks last: a cold outreach
+# can be turned down by a company that was never applied to, and stamping there
+# would invent an application date out of a rejection.
+APPLIED_STATUSES = frozenset(
+    STATUS_ORDER[STATUS_ORDER.index("Applied"):]
+) - {"Rejected"}
+
 
 def status_rank(status: Optional[str]) -> int:
     """Position in STATUS_ORDER; -1 for anything unrecognized, so an unknown
@@ -694,7 +703,41 @@ def mark_outreached(company: str, date_added: str, outreach_date: str,
 def update_status(company: str, date_added: str, status: str,
                   position_title: Optional[str] = None,
                   link: Optional[str] = None) -> bool:
-    return update_field(company, date_added, "status", status, position_title, link)
+    """
+    Updates Status, and dates the application when the new status implies one
+    and the row has no date yet.
+
+    date_applied used to be written in exactly one place -- the GUI, on the
+    exact transition to "Applied". Every other writer left it blank, including
+    the MCP update_job_status that inbox-triage advances rows with, so a job
+    taken straight to "Phone Screen" never got one. The application funnel
+    nests each stage inside the one above it, so those rows silently dropped
+    out of every stage below "applied": it reported 7 jobs at a screen when 33
+    had reached one. Stamping here covers every caller, because they all come
+    through this function.
+
+    Only ever fills a blank, in one statement, so advancing through later
+    rounds cannot reset the clock and no read-modify-write can race.
+    """
+    if status.strip() not in APPLIED_STATUSES:
+        return update_field(company, date_added, "status", status,
+                            position_title, link)
+
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        where, extra = _key_clause(position_title, link)
+        cur = conn.execute(
+            "UPDATE jobs SET status = ?, date_applied = CASE "
+            "WHEN COALESCE(date_applied, '') = '' THEN ? ELSE date_applied END "
+            f"WHERE {where}",
+            [status, str(date.today()), company, date_added] + extra,
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
 
 
 def update_notes(company: str, date_added: str, notes: str,
