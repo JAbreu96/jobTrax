@@ -29,7 +29,7 @@ def _job(db, company, status, link="http://x/1", title="Engineer", added="2026-0
 
 
 def _round(db, key, itype, when, loop_id=""):
-    return db.add_interview(interview_type=itype, occurred_date=when, loop_id=loop_id, **key)
+    return db.add_interview(interview_type=itype, scheduled_date=when, loop_id=loop_id, **key)
 
 
 def _recent(days_ago=1):
@@ -153,7 +153,7 @@ def test_unknown_type_and_missing_date_are_rejected(db):
     with pytest.raises(ValueError):
         _round(db, key, "technical", "")
     with pytest.raises(ValueError):
-        db.add_interview(interview_type="technical", occurred_date="2026-10-01",
+        db.add_interview(interview_type="technical", scheduled_date="2026-10-01",
                          self_rating=9, **key)
 
 
@@ -189,7 +189,7 @@ def test_sheet_sync_does_not_destroy_interview_history(db):
 def _age_round(db, key, itype, days_ago):
     from datetime import date, timedelta
     when = (date.today() - timedelta(days=days_ago)).isoformat()
-    return db.add_interview(interview_type=itype, occurred_date=when, **key)
+    return db.add_interview(interview_type=itype, scheduled_date=when, **key)
 
 
 def test_a_silent_round_becomes_ghosted_past_the_threshold(db):
@@ -278,7 +278,7 @@ def test_a_booked_round_shows_as_upcoming(db):
 
 def test_a_held_round_is_not_upcoming(db):
     key = _job(db, "Acme", "Phone Screen")
-    db.add_interview(interview_type="phone_screen", occurred_date=_recent(2), **key)
+    db.add_interview(interview_type="phone_screen", scheduled_date=_recent(2), **key)
     assert db.upcoming_interviews() == []
 
 
@@ -298,28 +298,6 @@ def test_a_round_is_booked_until_its_day_passes_then_it_counts(db):
 
     assert len(db.classify_interviews()) == 1
     assert len(db.upcoming_interviews()) == 1
-
-
-def test_the_deprecated_promotion_shim_leaves_the_date_alone(db):
-    """Nothing to promote any more, so calling it without a date changes nothing."""
-    key = _job(db, "Acme", "Phone Screen")
-    iid = db.add_interview(interview_type="phone_screen",
-                           scheduled_date=_recent(4), **key)
-    assert db.mark_interview_occurred(iid) is True
-    assert db.get_interviews()[0]["scheduled_date"] == _recent(4)
-
-
-def test_the_deprecated_promotion_shim_can_still_correct_a_date(db):
-    """Its one remaining use: the round ran on a different day than it was booked."""
-    key = _job(db, "Acme", "Phone Screen")
-    iid = db.add_interview(interview_type="phone_screen",
-                           scheduled_date=_recent(4), **key)
-    assert db.mark_interview_occurred(iid, _recent(2)) is True
-    assert db.get_interviews()[0]["scheduled_date"] == _recent(2)
-
-
-def test_the_deprecated_promotion_shim_reports_an_unknown_round(db):
-    assert db.mark_interview_occurred(9999) is False
 
 
 def test_the_upcoming_query_runs_on_sqlite(db):
@@ -381,7 +359,7 @@ def test_a_round_with_neither_date_is_rejected(db):
 def test_occurred_only_rounds_still_work_unchanged(db):
     """Regression: the existing call signature must keep behaving identically."""
     key = _job(db, "Acme", "Rejected")
-    db.add_interview(interview_type="technical", occurred_date=_recent(2), **key)
+    db.add_interview(interview_type="technical", scheduled_date=_recent(2), **key)
     out = db.classify_interviews()
     assert len(out) == 1 and out[0]["outcome"] == "failed"
 
@@ -395,7 +373,7 @@ def _decided_rounds(db, n, advanced_of=0):
     for i in range(n):
         status = "Offer" if i < advanced_of else "Rejected"
         key = _job(db, f"Co{i}", status, link=f"http://x/{i}")
-        db.add_interview(interview_type="technical", occurred_date=_recent(2), **key)
+        db.add_interview(interview_type="technical", scheduled_date=_recent(2), **key)
 
 
 def test_rate_is_withheld_below_the_floor(db):
@@ -421,7 +399,7 @@ def test_awaiting_rounds_never_count_toward_the_floor(db):
     _decided_rounds(db, 2)
     for i in range(10):
         key = _job(db, f"Open{i}", "Tracking", link=f"http://open/{i}")
-        db.add_interview(interview_type="technical", occurred_date=_recent(1), **key)
+        db.add_interview(interview_type="technical", scheduled_date=_recent(1), **key)
     row = db.interview_stats()["by_type"][0]["total"]
     assert row["decided"] == 2
     assert row["rate"] is None
@@ -432,7 +410,7 @@ def test_ghosted_rounds_do_count_toward_the_floor(db):
     for i in range(jobs_db.INTERVIEW_RATE_MIN_ROUNDS):
         key = _job(db, f"Ghost{i}", "Tracking", link=f"http://g/{i}")
         db.add_interview(interview_type="technical",
-                         occurred_date=_recent(jobs_db.GHOSTED_AFTER_DAYS + 2), **key)
+                         scheduled_date=_recent(jobs_db.GHOSTED_AFTER_DAYS + 2), **key)
     row = db.interview_stats()["by_type"][0]["total"]
     assert row["ghosted"] == jobs_db.INTERVIEW_RATE_MIN_ROUNDS
     assert row["rate"] == 0.0

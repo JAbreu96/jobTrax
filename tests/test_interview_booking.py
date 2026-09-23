@@ -64,7 +64,7 @@ def test_a_booking_is_accepted(client):
 
 def test_a_held_round_is_still_accepted(client):
     """The path that already worked must keep working."""
-    assert _post(client, occurred_date="2026-08-20").status_code == 200
+    assert _post(client, scheduled_date="2026-08-20").status_code == 200
 
 
 def test_neither_date_is_rejected(client):
@@ -74,16 +74,15 @@ def test_neither_date_is_rejected(client):
     assert "required" in res.get_json()["error"]
 
 
-def test_the_legacy_date_field_still_books_a_round(db, client):
+def test_the_legacy_date_field_is_no_longer_accepted(client):
     """
-    A round has one date, so there is no longer a pair that can contradict each
-    other -- the old "not both" rejection went with them. `occurred_date` is
-    still accepted from an older client and means the same one date;
-    scheduled_date wins when a caller sends both.
+    `occurred_date` survived one phase as an alias so the old widget kept
+    working. The widget posts `scheduled_date` now, so the alias is gone and a
+    caller still sending the old name gets told what to send instead.
     """
     res = _post(client, occurred_date=SOON)
-    assert res.status_code == 200
-    assert [r["scheduled_date"] for r in db.upcoming_interviews()] == [SOON]
+    assert res.status_code == 400
+    assert "scheduled_date" in res.get_json()["error"]
 
 
 def test_a_booking_reaches_the_coming_up_card(db, client):
@@ -103,7 +102,7 @@ def test_a_booked_round_cannot_move_a_rate(db, client):
     The assertion the whole change rests on. Record a held round, snapshot the
     stats, then book a future one: the numbers must be identical.
     """
-    _post(client, occurred_date="2026-08-01")
+    _post(client, scheduled_date="2026-08-01")
     before = db.interview_stats()
     _post(client, scheduled_date=SOON)
     assert db.interview_stats() == before
@@ -210,13 +209,11 @@ def test_a_time_separated_from_its_date_is_not_a_booking():
 # --- the backfill writes rounds, never jobs ---------------------------------
 
 def _apply(db, rounds, key):
-    today = datetime.date.today()
+    """Mirrors what backfill_interviews.py writes: one date, whatever it is."""
     for r in rounds:
-        past = r["date"] <= today
         db.add_interview(company=key[0], date_added=key[1], position_title=key[2],
                          link=key[3], interview_type="phone_screen",
-                         occurred_date=r["date"].isoformat() if past else "",
-                         scheduled_date="" if past else r["date"].isoformat())
+                         scheduled_date=r["date"].isoformat())
 
 
 def test_the_backfill_creates_no_job_rows(db):

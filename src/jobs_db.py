@@ -1036,9 +1036,9 @@ def _migrate_interviews_collapse_dates(conn: sqlite3.Connection) -> None:
 
 
 def add_interview(company: str, date_added: str, position_title: str, link: str,
-                  interview_type: str, occurred_date: str = "", type_label: str = "",
-                  loop_id: str = "", self_rating: Optional[int] = None,
-                  notes: str = "", scheduled_date: str = "") -> int:
+                  interview_type: str, scheduled_date: str = "",
+                  type_label: str = "", loop_id: str = "",
+                  self_rating: Optional[int] = None, notes: str = "") -> int:
     """
     Records one interview round, booked or held. Returns the new row id.
 
@@ -1047,16 +1047,13 @@ def add_interview(company: str, date_added: str, position_title: str, link: str,
     round is still ahead and counts toward nothing. A round that was booked and
     never took place is deleted rather than recorded as not having happened.
 
-    `occurred_date` is accepted as a deprecated alias for the same field and
-    wins when both are given, so callers written against the two-date table keep
-    working until they are moved over. A date is required either way — a round
-    with no day is not an event.
+    A date is required — a round with no day is not an event.
     """
     if interview_type not in INTERVIEW_TYPES:
         raise ValueError(
             f"Unknown interview_type '{interview_type}'. One of: {', '.join(INTERVIEW_TYPES)}"
         )
-    scheduled_date = (occurred_date or "").strip() or (scheduled_date or "").strip()
+    scheduled_date = (scheduled_date or "").strip()
     if not scheduled_date:
         raise ValueError("scheduled_date (the day the round is on) is required.")
     if self_rating is not None and not (1 <= int(self_rating) <= 5):
@@ -2435,35 +2432,5 @@ def jobs_missing_interview_rows() -> list[dict]:
             tuple(INTERVIEWING_STATUSES),
         ).fetchall()
         return [dict(r) for r in rows]
-    finally:
-        conn.close()
-
-
-def mark_interview_occurred(interview_id: int, occurred_date: str = "") -> bool:
-    """
-    DEPRECATED. There is no longer a promotion step: a round whose date has
-    passed has happened, so the only thing left for this to do is correct the
-    date when a round ran on a different day than it was booked for.
-
-    Kept as a shim so callers written against the two-date table keep working;
-    it goes away with them. Returns False only if the id is unknown. Calling it
-    without a date is a no-op that succeeds -- the round already carries the day
-    that decides the question.
-    """
-    conn = _connect()
-    if not conn:
-        return False
-    try:
-        row = conn.execute(
-            "SELECT scheduled_date FROM interviews WHERE id = ?", (interview_id,)
-        ).fetchone()
-        if not row:
-            return False
-        when = (occurred_date or "").strip()
-        if when and when != (row["scheduled_date"] or "").strip():
-            conn.execute("UPDATE interviews SET scheduled_date = ? WHERE id = ?",
-                         (when, interview_id))
-            conn.commit()
-        return True
     finally:
         conn.close()

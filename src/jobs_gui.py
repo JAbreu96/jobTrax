@@ -762,10 +762,7 @@ def api_add_interview():
     position_title = (payload.get("position_title") or "").strip()
     link = (payload.get("link") or "").strip()
     interview_type = (payload.get("interview_type") or "").strip()
-    # occurred_date is still read so an older client posting it keeps working;
-    # both names mean the one date the round is on.
-    scheduled_date = ((payload.get("scheduled_date") or "").strip()
-                      or (payload.get("occurred_date") or "").strip())
+    scheduled_date = (payload.get("scheduled_date") or "").strip()
     type_label = (payload.get("type_label") or "").strip()
     loop_id = (payload.get("loop_id") or "").strip()
     notes = (payload.get("notes") or "").strip()

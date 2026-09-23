@@ -42,7 +42,7 @@ def _job(db, company, *, status="Applied", applied="", outreach="", notes="",
 
 
 def _interview(db, key, itype="technical", when="2026-02-01"):
-    return db.add_interview(interview_type=itype, occurred_date=when, **key)
+    return db.add_interview(interview_type=itype, scheduled_date=when, **key)
 
 
 def _stage(payload, path, name):
