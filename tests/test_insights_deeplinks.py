@@ -53,9 +53,19 @@ def _section(html, start, end):
     whichever OTHER table happens to also carry the company. Returns "" if
     `start` never appears -- a section the template didn't render at all
     trivially cannot contain the company either.
+
+    Asserts `start` occurs exactly once. A repeated anchor (prose that
+    happens to echo a heading's words, say) makes `.split(start, 1)` land on
+    whichever occurrence comes first -- silently slicing the wrong region and
+    turning every assertion against it vacuous, which is exactly what
+    happened with "No response" matching the Silence card's prose before the
+    real heading. Two occurrences is a bug in the test, not a fact to work
+    around, so this fails loudly and names the count rather than picking one.
     """
-    if start not in html:
+    count = html.count(start)
+    if count == 0:
         return ""
+    assert count == 1, f"anchor {start!r} is ambiguous: appears {count} times, not 1"
     return html.split(start, 1)[1].split(end, 1)[0]
 
 
@@ -267,7 +277,11 @@ def test_a_suspected_uncaptured_company_links(db):
     html = _render(db)
 
     suspected = _section(html, "Suspected, not captured</h2>", "</table>")
-    no_response_table = _section(html, "No response", "</table>")
+    # Not "No response": the Silence card's prose ("<strong>No response</strong>
+    # means...") echoes the heading and would make the anchor ambiguous. The
+    # No-response table's own header row is unique -- Ghosted's thead ends in
+    # "Signal", this one ends in "Applied".
+    no_response_table = _section(html, "<th>Applied</th>", "</table>")
 
     assert ('href="/?q=Undercover Co' in suspected
             or 'href="/?q=Undercover%20Co' in suspected)
