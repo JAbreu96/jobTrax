@@ -853,31 +853,21 @@ const JobFields = (function () {
         labelInput.style.display = typeSel.value === 'other' ? '' : 'none';
       });
 
-      // Which of the two dates this round carries. A round is booked or it is
-      // held, never both -- the API rejects both set -- so this picks the field
-      // rather than offering two date boxes that can contradict each other.
-      const whenSel = document.createElement('select');
-      whenSel.title = 'Whether this round has happened yet';
-      for (const [v, t] of [['occurred', 'happened on'], ['scheduled', 'booked for']]) {
-        const opt = document.createElement('option');
-        opt.value = v;
-        opt.textContent = t;
-        whenSel.appendChild(opt);
-      }
-
+      // One date. The picker that used to choose between "happened on" and
+      // "booked for" is gone with the second column: the date itself says which
+      // one this is, so the two could no longer contradict each other.
       const dateInput = document.createElement('input');
       dateInput.type = 'date';
       dateInput.value = localISODate(new Date());
+      dateInput.title = 'The day this round is on';
       const syncWhen = () => {
-        const booked = whenSel.value === 'scheduled';
-        dateInput.title = booked ? 'Date the round is booked for'
-                                 : 'Date the round actually happened';
-        // A booked round is not an outcome yet, so there is nothing to rate.
-        ratingSel.disabled = booked;
-        if (booked) ratingSel.value = '';
-        btn.textContent = booked ? 'Book Round' : 'Log Round';
+        const ahead = dateInput.value > localISODate(new Date());
+        // A round still ahead is not an outcome yet, so there is nothing to rate.
+        ratingSel.disabled = ahead;
+        if (ahead) ratingSel.value = '';
+        btn.textContent = ahead ? 'Book Round' : 'Log Round';
       };
-      whenSel.addEventListener('change', syncWhen);
+      dateInput.addEventListener('change', syncWhen);
 
       const ratingSel = document.createElement('select');
       ratingSel.title = 'How it felt (optional)';
@@ -911,8 +901,7 @@ const JobFields = (function () {
         const body = Object.assign(jobKeyFields(job), {
           interview_type: typeSel.value,
           type_label: labelInput.value.trim(),
-          occurred_date: whenSel.value === 'occurred' ? dateInput.value : '',
-          scheduled_date: whenSel.value === 'scheduled' ? dateInput.value : '',
+          scheduled_date: dateInput.value,
           self_rating: ratingSel.value,
           loop_id: loopInput.value.trim(),
           notes: notesInput.value.trim(),
@@ -930,7 +919,7 @@ const JobFields = (function () {
 
       syncWhen();
 
-      for (const el of [typeSel, labelInput, whenSel, dateInput, ratingSel, loopInput,
+      for (const el of [typeSel, labelInput, dateInput, ratingSel, loopInput,
                         notesInput, btn]) {
         guard(el);
         form.appendChild(el);
@@ -963,8 +952,10 @@ const JobFields = (function () {
         row.className = 'interview-row';
         const type = r.interview_type === 'other' && r.type_label
           ? r.type_label : (r.interview_type || '').replace(/_/g, ' ');
-        // A booked round has no occurred_date; a blank there reads as a bug.
-        const bits = [r.occurred_date || ('booked ' + (r.scheduled_date || '?')), type];
+        // A round still ahead reads as booked; past that it simply happened.
+        const when = r.scheduled_date || '?';
+        const ahead = r.scheduled_date && r.scheduled_date > localISODate(new Date());
+        const bits = [ahead ? 'booked ' + when : when, type];
         if (r.loop_id) bits.push('loop: ' + r.loop_id);
         if (r.self_rating) bits.push(r.self_rating + '/5');
         if (r.notes) bits.push(r.notes);

@@ -7,10 +7,9 @@ CONFIRMED, Wednesday, September 2, 2026, 11:45 AM to 12:15 PM EDT" while the
 "Coming up" card on Insights, which reads the interviews table, shows every
 screen except that one.
 
-Note the card has since become future-only: a row this writes with a
-`scheduled_date` that has already gone by is counted on the card's "no outcome
-recorded" line rather than listed in the table. Still visible, still needs
-`mark_interview_occurred()` -- just not where this docstring originally implied.
+Note the card is future-only: a row this writes whose date has already gone by
+is a held round and belongs to the outcome table rather than the "Coming up"
+card. Nothing has to promote it -- the date alone decides which it is.
 
 The cause is upstream and fixed separately: nothing was allowed to write
 `interviews.scheduled_date`. Triage was told to record a round "only with
@@ -199,15 +198,13 @@ def main() -> int:
         try:
             for p in planned:
                 company, date_added, title, link = p["key"]
-                past = p["date"] <= today
                 note = f"Recovered from row notes by backfill_interviews."
                 if p["time"]:
                     note = f"{p['time']}. " + note
                 jobs_db.add_interview(
                     company=company, date_added=date_added, position_title=title,
                     link=link, interview_type="phone_screen",
-                    occurred_date=p["date"].isoformat() if past else "",
-                    scheduled_date="" if past else p["date"].isoformat(),
+                    scheduled_date=p["date"].isoformat(),
                     notes=note)
                 written += 1
         finally:

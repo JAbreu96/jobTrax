@@ -548,29 +548,31 @@ Drafts are never sent. Triage does not send email; it leaves work ready for the 
 
 ## Step 6 — Record what happened
 
-- **An interview was booked** (mail names an agreed date *and* time — a confirmation, a
-  calendar invite, an "you're all set for Tuesday at 2"): `jobs_db.add_interview` with
-  `scheduled_date` and no `occurred_date`. A date still ahead puts it in the "Coming up"
-  table; a date already past is counted on the card's "no outcome recorded" line instead,
-  since the table is future-only. Either way it is visible, and either way
-  `mark_interview_occurred()` is what clears it once the round has actually happened.
+- **An interview was booked or happened** (mail names an agreed date *and* time — a
+  confirmation, a calendar invite, an "you're all set for Tuesday at 2"; or a thank-you
+  referencing a screen that took place): `jobs_db.add_interview` with `scheduled_date`, the
+  day the round is on.
 
-  Recording a booking **cannot** move any rate. `classify_interviews()` drops
-  booked-but-not-held rounds before `interview_stats()` sees them, and `add_interview`'s
-  own docstring is explicit that only `occurred_date` makes a round count toward an
-  outcome. An earlier version of this skill banned recording invites to protect the funnel;
-  that protection now lives in the data layer, and the ban only lost the dates. Do not
-  reinstate it.
+  That is the only date a round has. A day still ahead puts it in the "Coming up" table and
+  counts toward nothing; once the day has passed the same row is a round that happened and
+  counts toward the outcomes. There is no second call to promote it — nothing to forget, and
+  no way for a round to sit in limbo. If a round turns out never to have happened, delete it
+  with `jobs_db.delete_interview(<id>)`; a round that did not happen is not recorded as not
+  having happened.
+
+  Recording a booking **cannot** move a rate on the day you record it: a round ahead of us
+  is excluded until its date passes. An earlier version of this skill banned recording
+  invites to protect the funnel; that protection lives in the data layer, and the ban only
+  lost the dates. Do not reinstate it.
 
   **A time must actually be agreed.** "Can you send some availability?" or a bare
   scheduling link is not a booking — move the status and leave the round alone. Writing a
   guessed date puts a fiction on the card, which is worse than the gap it fills.
 
-- **An interview occurred** (a screen took place, a thank-you or outcome references it):
-  `jobs_db.add_interview` with `occurred_date`. Only rounds that actually happened, and
-  never a cancelled one. This table feeds the funnel stats and cannot be rebuilt from
-  anywhere else. If the round was already recorded as booked, use
-  `jobs_db.mark_interview_occurred(<id>)` rather than adding a second row.
+  **Never record the same round twice.** If the round is already on the table as a booking,
+  it is already the row that will count once its date passes — adding a second row for the
+  same call double-counts it. Correct the date on the existing round if it moved. This table
+  feeds the interview stats and cannot be rebuilt from anywhere else.
 
   **Only against a row that already exists.** `add_interview` keys off the full composite
   `(company, date_added, position_title, link)` and does not check that a job matches, so a

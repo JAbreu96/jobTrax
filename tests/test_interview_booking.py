@@ -74,15 +74,16 @@ def test_neither_date_is_rejected(client):
     assert "required" in res.get_json()["error"]
 
 
-def test_both_dates_are_rejected(client):
+def test_the_legacy_date_field_still_books_a_round(db, client):
     """
-    upcoming_interviews() reads an occurred_date as done, so a row carrying both
-    claims to be simultaneously booked and held -- and vanishes from the card it
-    was meant to appear on.
+    A round has one date, so there is no longer a pair that can contradict each
+    other -- the old "not both" rejection went with them. `occurred_date` is
+    still accepted from an older client and means the same one date;
+    scheduled_date wins when a caller sends both.
     """
-    res = _post(client, occurred_date="2026-08-20", scheduled_date=SOON)
-    assert res.status_code == 400
-    assert "not both" in res.get_json()["error"]
+    res = _post(client, occurred_date=SOON)
+    assert res.status_code == 200
+    assert [r["scheduled_date"] for r in db.upcoming_interviews()] == [SOON]
 
 
 def test_a_booking_reaches_the_coming_up_card(db, client):

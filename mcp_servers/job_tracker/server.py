@@ -421,7 +421,7 @@ def list_interviews(company: str = "") -> list[dict]:
             "position_title": r["position_title"],
             "interview_type": r["type_label"] if r["interview_type"] == "other" and r["type_label"]
                               else r["interview_type"],
-            "occurred_date": r["occurred_date"],
+            "scheduled_date": r["scheduled_date"],
             "loop_id": r["loop_id"],
             "self_rating": r["self_rating"],
             "outcome": r["outcome"],

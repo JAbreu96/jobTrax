@@ -194,16 +194,6 @@
     {% else %}
     <p class="muted" style="font-size:13px;margin:0;">Nothing booked.</p>
     {% endif %}
-    {% if past_bookings %}
-    <p class="muted" style="font-size:13px;margin:8px 0 0;">
-      <span class="rate bad">{{ past_bookings | length }}</span>
-      booked before today with no outcome recorded —
-      {{ past_bookings[:3] | map(attribute="company") | join(", ") }}{% if past_bookings | length > 3 %},
-      and {{ (past_bookings | length) - 3 }} more{% endif %}.
-      Mark each one held so it counts toward a rate, or
-      <a href="/api/interviews/upcoming?include_past=1">list them all</a>.
-    </p>
-    {% endif %}
     {% if missing_rounds %}
     <p class="muted" style="font-size:13px;margin:8px 0 0;">
       <span class="rate bad">{{ missing_rounds | length }}</span>

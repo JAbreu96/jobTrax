@@ -101,8 +101,10 @@ export interface Interview extends JobKey {
   interview_type: InterviewType;
   type_label: string | null;
   loop_id: string | null;
+  // The one date a round carries: the day it is on. Past it, the round
+  // happened; before it, it is still booked. There is no second column
+  // recording that it went ahead.
   scheduled_date: string | null;
-  occurred_date: string | null;
   self_rating: number | null;
   notes: string | null;
 }
@@ -111,6 +113,8 @@ export interface Interview extends JobKey {
 // fields. Never counted toward any rate (see the comment on the Flask route).
 export interface UpcomingInterview extends Interview {
   days_away: number;
+  /** @deprecated Always false. Described a booking whose date had passed with
+   *  no outcome recorded, which is no longer a state a round can be in. */
   overdue: boolean;
 }
 
