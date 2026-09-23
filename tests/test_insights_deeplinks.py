@@ -44,6 +44,21 @@ def _render(db):
         return client.get("/insights").get_data(as_text=True)
 
 
+def _section(html, start, end):
+    """
+    The slice of the page strictly between `start` and the following `end`.
+
+    Mirrors test_insights_view.py's _card() helper: several tables share a
+    page, and a plain substring check on the whole page would pass through
+    whichever OTHER table happens to also carry the company. Returns "" if
+    `start` never appears -- a section the template didn't render at all
+    trivially cannot contain the company either.
+    """
+    if start not in html:
+        return ""
+    return html.split(start, 1)[1].split(end, 1)[0]
+
+
 def test_an_upcoming_rounds_company_links_to_the_search(db):
     from datetime import date, timedelta
     key = _job(db, "Sciforium")
@@ -106,35 +121,68 @@ def test_a_missing_rounds_company_links(db):
     `interviews`. Its line was a `join(", ")` over a list of company strings,
     so it took a loop rather than a single macro call to keep each company
     its own link.
+
+    date_applied is pinned to today rather than reused from `_job()`'s
+    hardcoded 2026-08-19: that date is permanently stale against
+    date.today(), and a stale Phone-Screen row also crosses into
+    job_silence_stats()['ghosted_rows'] -- which would let this test pass
+    even if the missing-rounds call site regressed, as long as the ghosted
+    one still worked. A fresh date keeps this fixture out of the silence
+    tables entirely, so the assertion below can only be satisfied by the
+    missing-rounds call site.
     """
-    _job(db, "Sciforium", status="Phone Screen")
-    assert len(jobs_db.jobs_missing_interview_rows()) == 1, \
+    from datetime import date
+    today = date.today().isoformat()
+    db.upsert_job({"company": "Sciforium", "position_title": "Engineer",
+                   "link": "thread-missing", "date_added": today,
+                   "status": "Phone Screen", "date_applied": today})
+    assert [r["company"] for r in jobs_db.jobs_missing_interview_rows()] == ["Sciforium"], \
         "fixture did not land in jobs_missing_interview_rows()"
+    assert jobs_db.job_silence_stats()["ghosted_rows"] == [], \
+        "fixture leaked into ghosted_rows -- fixture is not isolated to missing rounds"
 
     html = _render(db)
 
-    assert 'href="/?q=Sciforium&amp;include_archived=1"' in html
+    missing = _section(html, "no round recorded", "</p>")
+    ghosted_table = _section(html, "Ghosted</h2>", "</table>")
+
+    assert 'href="/?q=Sciforium&amp;include_archived=1"' in missing
+    assert "Sciforium" not in ghosted_table
 
 
 def test_a_ghosted_companys_row_links(db):
     """
-    Ghosted means someone engaged and then went quiet. A Phone-Screen status
-    with no interview row still counts as engagement (`screening_status`),
-    and ageing the application past GHOSTED_AFTER_DAYS is what tips it from
-    'waiting' into 'ghosted'.
+    Ghosted means someone engaged and then went quiet. Built via a recruiter
+    message rather than a Phone-Screen status: a screening status makes the
+    job unconditionally qualify for jobs_missing_interview_rows() too (that
+    query has no date filter), which would let this test pass on the
+    missing-rounds call site alone. A recruiter_message signal on an
+    "Applied" job ghosts the row without ever touching an interviewing
+    status, so only the Ghosted call site can satisfy the assertion below.
     """
     from datetime import date, timedelta
     stale = (date.today() - timedelta(days=jobs_db.GHOSTED_AFTER_DAYS + 5)).isoformat()
-    db.upsert_job({"company": "Fadeaway Inc", "position_title": "Engineer",
-                   "link": "thread-fade", "date_added": stale, "status": "Phone Screen",
-                   "date_applied": stale})
-    ghosted = jobs_db.job_silence_stats()["ghosted_rows"]
-    assert [r["company"] for r in ghosted] == ["Fadeaway Inc"], \
+    key = dict(company="Fadeaway Inc", date_added=stale,
+               position_title="Engineer", link="thread-fade")
+    db.upsert_job({**key, "status": "Applied"})
+    rid = jobs_db.upsert_recruiter(source="linkedin", identity="fade-scout",
+                                   name="Fade Scout", seen_date=stale)
+    jobs_db.link_recruiter_job(rid, sourced_date=stale, **key)
+    jobs_db.record_recruiter_message(rid, direction="inbound", occurred_date=stale)
+
+    assert [r["company"] for r in jobs_db.job_silence_stats()["ghosted_rows"]] == ["Fadeaway Inc"], \
         "fixture did not land in job_silence_stats()['ghosted_rows']"
+    assert jobs_db.jobs_missing_interview_rows() == [], \
+        "fixture leaked into jobs_missing_interview_rows() -- fixture is not isolated to ghosted"
 
     html = _render(db)
 
-    assert 'href="/?q=Fadeaway Inc' in html or 'href="/?q=Fadeaway%20Inc' in html
+    ghosted_table = _section(html, "Ghosted</h2>", "</table>")
+    missing = _section(html, "no round recorded", "</p>")
+
+    assert ('href="/?q=Fadeaway Inc' in ghosted_table
+            or 'href="/?q=Fadeaway%20Inc' in ghosted_table)
+    assert "Fadeaway Inc" not in missing
 
 
 def test_no_response_auto_marker_stays_outside_the_link(db):
@@ -193,20 +241,37 @@ def test_a_suspected_uncaptured_company_links(db):
     recruiter recorded against it. The recruiters table itself must also be
     non-empty, or the template's outer `{% if recruiters %}` hides the whole
     section including this one.
+
+    date_applied is pinned to today rather than reused from `_job()`'s
+    hardcoded 2026-08-19: that date is over 30 days stale against
+    date.today(), which crosses NO_RESPONSE_AFTER_DAYS and lands the same row
+    in job_silence_stats()['no_response_rows'] too -- letting this test pass
+    on the No-response call site alone. A fresh date_applied keeps the row
+    "waiting", so only the Suspected-not-captured call site can satisfy the
+    assertion below.
     """
+    from datetime import date
+    today = date.today().isoformat()
     jobs_db.upsert_recruiter(source="linkedin", identity="unrelated-scout",
-                             name="Unrelated Scout", seen_date="2026-08-19")
+                             name="Unrelated Scout", seen_date=today)
     jobs_db.upsert_job({"company": "Undercover Co", "position_title": "Engineer",
                         "link": "mailto:someone@undercover.example",
-                        "date_added": "2026-08-19", "status": "Applied",
-                        "date_applied": "2026-08-19"})
+                        "date_added": today, "status": "Applied",
+                        "date_applied": today})
     rows = jobs_db.recruiter_coverage()["rows"]
     assert [r["company"] for r in rows] == ["Undercover Co"], \
         "fixture did not land in recruiter_coverage()['rows']"
+    assert jobs_db.job_silence_stats()["no_response_rows"] == [], \
+        "fixture leaked into no_response_rows -- fixture is not isolated to coverage.rows"
 
     html = _render(db)
 
-    assert 'href="/?q=Undercover Co' in html or 'href="/?q=Undercover%20Co' in html
+    suspected = _section(html, "Suspected, not captured</h2>", "</table>")
+    no_response_table = _section(html, "No response", "</table>")
+
+    assert ('href="/?q=Undercover Co' in suspected
+            or 'href="/?q=Undercover%20Co' in suspected)
+    assert "Undercover Co" not in no_response_table
 
 
 def test_a_company_with_an_ampersand_is_encoded(db):
