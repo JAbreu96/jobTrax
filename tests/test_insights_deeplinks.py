@@ -98,3 +98,125 @@ def test_the_round_type_table_grows_no_links(db):
     db.add_interview(**key, interview_type="technical", scheduled_date="2026-08-01")
 
     assert "/?q=technical" not in _render(db)
+
+
+def test_a_missing_rounds_company_links(db):
+    """
+    'Missing rounds' names jobs at Phone Screen or later with no round in
+    `interviews`. Its line was a `join(", ")` over a list of company strings,
+    so it took a loop rather than a single macro call to keep each company
+    its own link.
+    """
+    _job(db, "Sciforium", status="Phone Screen")
+    assert len(jobs_db.jobs_missing_interview_rows()) == 1, \
+        "fixture did not land in jobs_missing_interview_rows()"
+
+    html = _render(db)
+
+    assert 'href="/?q=Sciforium&amp;include_archived=1"' in html
+
+
+def test_a_ghosted_companys_row_links(db):
+    """
+    Ghosted means someone engaged and then went quiet. A Phone-Screen status
+    with no interview row still counts as engagement (`screening_status`),
+    and ageing the application past GHOSTED_AFTER_DAYS is what tips it from
+    'waiting' into 'ghosted'.
+    """
+    from datetime import date, timedelta
+    stale = (date.today() - timedelta(days=jobs_db.GHOSTED_AFTER_DAYS + 5)).isoformat()
+    db.upsert_job({"company": "Fadeaway Inc", "position_title": "Engineer",
+                   "link": "thread-fade", "date_added": stale, "status": "Phone Screen",
+                   "date_applied": stale})
+    ghosted = jobs_db.job_silence_stats()["ghosted_rows"]
+    assert [r["company"] for r in ghosted] == ["Fadeaway Inc"], \
+        "fixture did not land in job_silence_stats()['ghosted_rows']"
+
+    html = _render(db)
+
+    assert 'href="/?q=Fadeaway Inc' in html or 'href="/?q=Fadeaway%20Inc' in html
+
+
+def test_no_response_auto_marker_stays_outside_the_link(db):
+    """
+    (auto) describes how the job was applied to, not where the link goes --
+    it has to sit outside the <a>, or clicking near the marker would silently
+    carry the reader to the same place as clicking the company.
+    """
+    from datetime import date, timedelta
+    stale = (date.today() - timedelta(days=jobs_db.NO_RESPONSE_AFTER_DAYS + 5)).isoformat()
+    db.upsert_job({"company": "Autosilent Co", "position_title": "Engineer",
+                   "link": "thread-auto", "date_added": stale, "status": "Applied",
+                   "date_applied": stale, "notes": "Imported from auto-apply export"})
+    no_response = jobs_db.job_silence_stats()["no_response_rows"]
+    assert len(no_response) == 1 and no_response[0]["auto_applied"] is True, \
+        "fixture did not land as an auto-applied no_response row"
+
+    html = _render(db)
+
+    assert 'href="/?q=Autosilent Co' in html or 'href="/?q=Autosilent%20Co' in html
+    # The marker must not be inside the anchor's text.
+    assert '(auto)</a>' not in html
+    assert '<span class="muted">(auto)</span>' in html
+    link_end = html.index('Autosilent')
+    anchor_close = html.index("</a>", link_end)
+    marker_pos = html.index("(auto)", link_end)
+    assert marker_pos > anchor_close, "(auto) marker landed inside the anchor"
+
+
+def test_a_recruiter_role_sub_row_links_the_company_not_the_role(db):
+    """
+    This sub-row renders the role title with no company in sight -- but the
+    `role` dict carries one. Link text stays the role; the href has to target
+    the company, which is the one thing nothing else pins down.
+    """
+    rid = jobs_db.upsert_recruiter(source="linkedin", identity="scout-1",
+                                   name="Scout", seen_date="2026-08-19")
+    jobs_db.link_recruiter_job(rid, company="RoleCo", date_added="2026-08-19",
+                               position_title="Special Role", link="thread-role")
+    roles = jobs_db.get_recruiter_jobs()
+    assert [r["position_title"] for r in roles] == ["Special Role"], \
+        "fixture did not land in get_recruiter_jobs()"
+
+    html = _render(db)
+
+    assert 'href="/?q=RoleCo&amp;include_archived=1"' in html
+    assert '>Special Role</a>' in html
+    assert 'href="/?q=Special Role' not in html
+    assert 'href="/?q=Special%20Role' not in html
+
+
+def test_a_suspected_uncaptured_company_links(db):
+    """
+    coverage.rows comes from unlinked_recruiter_rows(): a job whose link
+    shape looks like inbound outreach (a conversation, not a posting) with no
+    recruiter recorded against it. The recruiters table itself must also be
+    non-empty, or the template's outer `{% if recruiters %}` hides the whole
+    section including this one.
+    """
+    jobs_db.upsert_recruiter(source="linkedin", identity="unrelated-scout",
+                             name="Unrelated Scout", seen_date="2026-08-19")
+    jobs_db.upsert_job({"company": "Undercover Co", "position_title": "Engineer",
+                        "link": "mailto:someone@undercover.example",
+                        "date_added": "2026-08-19", "status": "Applied",
+                        "date_applied": "2026-08-19"})
+    rows = jobs_db.recruiter_coverage()["rows"]
+    assert [r["company"] for r in rows] == ["Undercover Co"], \
+        "fixture did not land in recruiter_coverage()['rows']"
+
+    html = _render(db)
+
+    assert 'href="/?q=Undercover Co' in html or 'href="/?q=Undercover%20Co' in html
+
+
+def test_a_company_with_an_ampersand_is_encoded(db):
+    """
+    An unencoded '&' inside a query string starts a second parameter instead
+    of naming the company -- this is what would silently break if `urlencode`
+    were ever dropped from the macro.
+    """
+    _job(db, "Barnes & Noble", status="Applied")
+
+    html = _render(db)
+
+    assert 'href="/?q=Barnes%20%26%20Noble&amp;include_archived=1"' in html
