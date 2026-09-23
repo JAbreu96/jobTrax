@@ -95,15 +95,37 @@ def test_a_duplicate_rounds_company_links_without_eating_the_delete_button(db):
     """
     The row owns a Delete button. A whole-row link would have swallowed it --
     which is why only the company cell is linked.
+
+    The rounds are dated 5 days ago rather than the fixed 2026-08-25: that
+    fixed date is 29 days stale against today, and _relationship_index()
+    indexes every interviews row regardless of which table put it there --
+    so a stale round also ghosts this exact company via the SAME two rows,
+    rendering a second, identical link from the Ghosted call site. That let
+    a page-wide "/?q=NACE" in html check pass even if the duplicate-rounds
+    call site itself regressed to plain text. 5 days ago is recent enough to
+    stay "waiting" (GHOSTED_AFTER_DAYS is 15) and is still in the past, so it
+    does not additionally schedule into "Coming up" the way a future date
+    would.
     """
+    from datetime import date, timedelta
+    recent = (date.today() - timedelta(days=5)).isoformat()
     key = _job(db, "NACE Partners")
-    db.add_interview(**key, interview_type="recruiter_screen", scheduled_date="2026-08-25")
-    db.add_interview(**key, interview_type="recruiter_screen", scheduled_date="2026-08-25")
+    db.add_interview(**key, interview_type="recruiter_screen", scheduled_date=recent)
+    db.add_interview(**key, interview_type="recruiter_screen", scheduled_date=recent)
+
+    assert len(jobs_db.duplicate_interview_rounds()) == 1, \
+        "fixture did not land in duplicate_interview_rounds()"
+    assert jobs_db.job_silence_stats()["ghosted_rows"] == [], \
+        "fixture leaked into ghosted_rows -- fixture is not isolated to duplicate rounds"
 
     html = _render(db)
 
-    assert "/?q=NACE" in html
-    assert 'class="dup-del"' in html
+    dup_table = _section(html, 'id="dup-rounds"', "</table>")
+    ghosted_table = _section(html, "Ghosted</h2>", "</table>")
+
+    assert "/?q=NACE" in dup_table
+    assert 'class="dup-del"' in dup_table
+    assert "NACE" not in ghosted_table
 
 
 def test_a_silent_companys_row_links(db):

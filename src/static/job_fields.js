@@ -91,7 +91,10 @@ const JobFields = (function () {
   function queryWithSearch(search, q) {
     // Rebuilt from the existing params, never replaced: a search typed after
     // arriving from the funnel must not drop ?stage, which is what keeps the
-    // archived rows the funnel counted in the list.
+    // archived rows the funnel counted in the list. include_archived survives
+    // the same way and on purpose -- the archived rows it let in are already
+    // sitting in allJobs, and stripping the param on the first keystroke
+    // would shrink the list out from under the user mid-type.
     const params = new URLSearchParams(search || '');
     const term = (q || '').trim();
     if (term) params.set('q', term);
@@ -106,6 +109,17 @@ const JobFields = (function () {
     // *types* never quietly widens the population underneath them.
     const params = new URLSearchParams(search || '');
     return params.has('stage') || params.get('include_archived') === '1';
+  }
+
+  function searchBannerText(q) {
+    // Pure so the banner's wording is testable without a DOM: given the
+    // *current* query, not the one the page loaded with, so a caller that
+    // re-runs this on every keystroke keeps the banner honest about what the
+    // table is actually filtered to. Returns null rather than '' when there
+    // is nothing to say, so the template can tell "no banner" from "banner
+    // with empty text" without re-deriving the same trim/empty check.
+    const term = (q || '').trim();
+    return term ? `Searching for “${term}”` : null;
   }
 
   /*
@@ -1055,6 +1069,7 @@ const JobFields = (function () {
     searchFromQuery,
     queryWithSearch,
     wantsArchived,
+    searchBannerText,
     SORT_COLUMNS,
     compareJobs,
     nextSortDirection,
