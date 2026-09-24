@@ -12,7 +12,7 @@ import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useJobFieldEditing } from "../src/hooks/useJobFieldEditing";
-import type { Job, JobsPage } from "../src/api/types";
+import type { Job, JobsPage, JobDetail } from "../src/api/types";
 
 function makeJob(overrides: Partial<Job> = {}): Job {
   return {
@@ -144,6 +144,107 @@ describe("useJobFieldEditing", () => {
     );
     const page = queryClient.getQueryData<JobsPage>(["jobs", {}]);
     expect(page?.jobs).toHaveLength(0);
+  });
+
+  /*
+   * The /api/jobs/detail cache. These pin the fix for the stale-description
+   * bug: the description editor saves job_summary through the generic
+   * saveField path, which patched only the ["jobs"] list cache, so the detail
+   * pane kept rendering pre-edit text until something forced a refetch.
+   *
+   * Each seeds the detail entry the way useJobDetail mounts it -- under a bare
+   * 4-field JobKey -- while calling the mutation with a whole Job row, which is
+   * what a list hands its callbacks. That asymmetry is the trap: TanStack hashes
+   * the embedded key object structurally, so a `{queryKey: ["jobDetail", job]}`
+   * filter built from the fat row matches none of these entries.
+   */
+  function detailKey(job: Job) {
+    return {
+      company: job.company,
+      date_added: job.date_added,
+      position_title: job.position_title,
+      link: job.link,
+    };
+  }
+
+  it("patches job_summary into the detail cache mounted under a bare JobKey", async () => {
+    const job = makeJob();
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    queryClient.setQueryData(["jobDetail", detailKey(job), undefined], {
+      interviews: [],
+      job_summary: "old text",
+    } satisfies JobDetail);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(jsonResponse({}));
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.saveField.mutateAsync({ job, field: "job_summary", value: "new text" });
+    });
+
+    const detail = queryClient.getQueryData<JobDetail>([
+      "jobDetail",
+      detailKey(job),
+      undefined,
+    ]);
+    expect(detail?.job_summary).toBe("new text");
+    expect(detail?.interviews).toEqual([]);
+  });
+
+  it("leaves another job's detail entry alone when one job's summary is saved", async () => {
+    const job = makeJob();
+    const other = makeJob({ company: "Globex" });
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    queryClient.setQueryData(["jobDetail", detailKey(job), undefined], {
+      interviews: [],
+      job_summary: "old text",
+    } satisfies JobDetail);
+    queryClient.setQueryData(["jobDetail", detailKey(other), undefined], {
+      interviews: [],
+      job_summary: "untouched",
+    } satisfies JobDetail);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(jsonResponse({}));
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.saveField.mutateAsync({ job, field: "job_summary", value: "new" });
+    });
+
+    expect(
+      queryClient.getQueryData<JobDetail>(["jobDetail", detailKey(other), undefined])?.job_summary,
+    ).toBe("untouched");
+  });
+
+  it("does not rewrite the detail cache when a non-summary field is saved", async () => {
+    const job = makeJob();
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    const seeded: JobDetail = { interviews: [], job_summary: "untouched" };
+    queryClient.setQueryData(["jobDetail", detailKey(job), undefined], seeded);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(jsonResponse({}));
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.saveField.mutateAsync({ job, field: "notes", value: "hi" });
+    });
+
+    // Identity, not just equality: an untouched cache must not be swapped for
+    // an equal copy, or every detail subscriber re-renders on every notes save.
+    expect(queryClient.getQueryData(["jobDetail", detailKey(job), undefined])).toBe(seeded);
+  });
+
+  it("deleteJob drops the detail entry mounted under a bare JobKey", async () => {
+    const job = makeJob();
+    const { Wrapper, queryClient } = wrapperWithJobsCache(job);
+    queryClient.setQueryData(["jobDetail", detailKey(job), undefined], {
+      interviews: [],
+    } satisfies JobDetail);
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockReturnValue(jsonResponse({}));
+
+    const { result } = renderHook(() => useJobFieldEditing(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.deleteJob.mutateAsync(job);
+    });
+
+    expect(queryClient.getQueryData(["jobDetail", detailKey(job), undefined])).toBeUndefined();
   });
 
   it("resolves (does not throw) a 409 with a blocked list from setRecruiter", async () => {

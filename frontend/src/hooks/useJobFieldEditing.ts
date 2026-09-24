@@ -50,6 +50,28 @@ import type { Job, JobKey, JobsPage, JobDetail, Recruiter } from "../api/types";
 // Cache helpers -- the React replacement for "mutate `job`, then re-render".
 // ---------------------------------------------------------------------------
 
+/*
+ * Matches every ["jobDetail", key, summary] entry belonging to one job.
+ *
+ * Deliberately a predicate rather than `{ queryKey: ["jobDetail", key] }`.
+ * useJobDetail mounts with the caller's key object embedded in the query key,
+ * and TanStack compares that structurally: a partial match requires every
+ * field of the filter's key to be present on the mounted one. A JobKeyInput
+ * is frequently a whole `Job` row (that is what a table hands its callbacks),
+ * which carries a dozen fields the mounted 4-field `JobKey` does not -- so the
+ * filter silently matches nothing. rowKey() compares the four identity columns
+ * and only those, which is the question actually being asked.
+ */
+function jobDetailEntries(key: JobKeyInput) {
+  const target = rowKey(key);
+  return {
+    predicate: (q: { queryKey: readonly unknown[] }) =>
+      q.queryKey[0] === "jobDetail" &&
+      q.queryKey[1] != null &&
+      rowKey(q.queryKey[1] as JobKeyInput) === target,
+  };
+}
+
 function patchJobInCaches(queryClient: QueryClient, key: JobKeyInput, patch: Partial<Job>) {
   queryClient.setQueriesData<JobsPage>({ queryKey: ["jobs"], exact: false }, (page) => {
     if (!page) return page;
@@ -59,9 +81,24 @@ function patchJobInCaches(queryClient: QueryClient, key: JobKeyInput, patch: Par
     };
   });
   // /api/jobs/detail is keyed by the job key, not by list membership, so it
-  // needs its own patch -- but only interviews/job_summary live there today,
-  // neither of which this hook ever writes, so there is nothing to patch yet.
-  // Left as a no-op comment rather than silently doing nothing invisibly.
+  // needs its own patch -- see patchJobSummaryInDetail, which saveField calls
+  // for the one field that lives in both caches. Not folded in here because
+  // job_summary is deliberately absent from `Job` (the server omits it from
+  // LIST_COLUMNS), so it cannot travel in a Partial<Job> without a cast that
+  // would hide exactly which field is being special-cased.
+}
+
+/*
+ * job_summary is the only field this hook writes that also lives in
+ * /api/jobs/detail: the description editor saves it through the generic
+ * saveField path. Without this, an edit repainted the list row and left the
+ * detail pane rendering pre-edit text until something forced a refetch.
+ * Interviews, the other half of JobDetail, are never written through here.
+ */
+function patchJobSummaryInDetail(queryClient: QueryClient, key: JobKeyInput, summary: string) {
+  queryClient.setQueriesData<JobDetail>(jobDetailEntries(key), (detail) =>
+    detail ? { ...detail, job_summary: summary } : detail,
+  );
 }
 
 function removeJobFromCaches(queryClient: QueryClient, key: JobKeyInput) {
@@ -69,7 +106,7 @@ function removeJobFromCaches(queryClient: QueryClient, key: JobKeyInput) {
     if (!page) return page;
     return { ...page, jobs: page.jobs.filter((j) => rowKey(j) !== rowKey(key)) };
   });
-  queryClient.removeQueries({ queryKey: ["jobDetail", key], exact: false });
+  queryClient.removeQueries(jobDetailEntries(key));
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +184,9 @@ export function useJobFieldEditing(options: UseJobFieldEditingOptions = {}) {
         patch.date_applied = data.date_applied;
       }
       patchJobInCaches(queryClient, variables.job, patch);
+      if (variables.field === "job_summary") {
+        patchJobSummaryInDetail(queryClient, variables.job, variables.value);
+      }
       options.onFieldSaved?.(variables.job, variables.field, variables.value);
     },
   });

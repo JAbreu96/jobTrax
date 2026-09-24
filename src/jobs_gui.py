@@ -152,6 +152,19 @@ def kanban():
                            interview_types=INTERVIEW_TYPES)
 
 
+def _bundle_asset_exists(name: str) -> bool:
+    """Whether `npm run build` has emitted src/static/dist/assets/<name>.
+
+    src/static/dist/ is gitignored, so on a fresh clone it is simply absent
+    and /app would otherwise serve a <script> tag pointing at a 404 -- a blank
+    page with the reason only visible in devtools. Checked per request rather
+    than cached at import: the dev loop is "edit, rebuild, refresh", and a
+    cached miss would survive the rebuild and keep claiming the bundle is
+    missing until Flask restarted.
+    """
+    return os.path.isfile(os.path.join(app.static_folder, "dist", "assets", name))
+
+
 # Staging mount for the React rewrite (frontend/). Phase 0 only -- it does not
 # replace "/", "/kanban" or "/insights" yet, which still serve the Jinja
 # templates above. Both routes are needed so a hard refresh on a client-routed
@@ -162,7 +175,19 @@ def kanban():
 @app.route("/app")
 @app.route("/app/<path:_rest>")
 def app_shell(_rest=None):
-    return render_template("app_shell.html")
+    return render_template(
+        "app_shell.html",
+        bundle_built=_bundle_asset_exists("main.js"),
+        # Vite emits a stylesheet only once something in the entry graph
+        # imports CSS. Phase 0's App.tsx imported none, and the field
+        # components landed on this rung are not mounted yet, so main.css
+        # genuinely does not exist here -- linking it unconditionally would
+        # serve a 404 on every load. Asking the filesystem rather than
+        # hard-coding either answer means the link appears on its own the
+        # moment a later phase renders a component that imports a module, so
+        # nobody has to remember to come back and add it.
+        bundle_css=_bundle_asset_exists("main.css"),
+    )
 
 
 # The list is ordered by date_added DESC, and date_added is not unique, so a
