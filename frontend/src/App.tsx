@@ -1,9 +1,10 @@
 import { Routes, Route } from "react-router-dom";
+import JobViewPage from "./components/pages/JobViewPage";
+import "./styles/tokens.css";
 
-// Phase 0 placeholders. Real UI ports land in later phases:
-//   /         -> Phase 4/5 (jobs table)
-//   /kanban   -> Phase 5 (kanban board)
-//   /insights -> Phase 7 (funnel/silence/recruiter/interview views)
+// Still placeholders. The jobs table, the board and insights are each their
+// own cutover; /job below is the first route here that renders real UI, and is
+// reached from the Jinja table rather than from these.
 function JobsPlaceholder() {
   return <h1>Jobs table — not yet ported</h1>;
 }
@@ -27,6 +28,10 @@ export default function App() {
       <Route path="/" element={<JobsPlaceholder />} />
       <Route path="/kanban" element={<KanbanPlaceholder />} />
       <Route path="/insights" element={<InsightsPlaceholder />} />
+      {/* The job key is four columns, so it rides in the query string rather
+          than the path -- `link` is itself a URL and does not survive being a
+          path segment. */}
+      <Route path="/job" element={<JobViewPage />} />
     </Routes>
   );
 }

@@ -514,3 +514,67 @@ def test_app_shell_has_not_taken_over_the_jinja_views(client):
     """Phase 0 is purely additive: /, /kanban and /insights still render Jinja."""
     for path in ("/", "/kanban", "/insights"):
         assert "dist/assets/main.js" not in client.get(path).get_data(as_text=True), path
+
+
+# --- /api/jobs/detail?job=1 -------------------------------------------------
+#
+# The job view at /app is reached by a full page load out of the Jinja table,
+# so it arrives with an empty cache and no way to ask for a single row. Before
+# this flag it pulled the whole list to find one: 1.5MB and ~1.2s, measured, on
+# every open.
+
+def test_detail_omits_the_job_row_unless_asked(client):
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "",
+    }).get_json()
+
+    # The table is expanding a row it already holds; shipping it a second copy
+    # would be payload it throws away.
+    assert "job" not in body
+
+
+def test_detail_returns_the_row_when_asked(client):
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "job": "1",
+    }).get_json()
+
+    assert body["job"]["company"] == "Acme"
+    assert body["job"]["status"] == "Tracking"
+    # Same request still carries what it always did.
+    assert body["job_summary"] == "A long job description."
+    assert body["interviews"] == []
+
+
+def test_the_returned_row_carries_the_recruiter_fields(client):
+    """Not columns on `jobs` -- they come from recruiter_jobs, and a row that
+    omits them renders as unlinked in the recruiter picker rather than erroring."""
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "job": "1",
+    }).get_json()
+
+    assert body["job"]["recruiter_id"] is None
+    assert body["job"]["recruiter_from_triage"] is False
+
+
+def test_the_returned_row_matches_what_the_list_serves(client):
+    """One definition of a job row, or the two views drift."""
+    listed = next(j for j in client.get("/api/jobs").get_json()
+                  if j["company"] == "Acme")
+    one = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "job": "1",
+    }).get_json()["job"]
+
+    assert one == listed
+
+
+def test_an_unknown_key_reports_no_row_rather_than_erroring(client):
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Nope", "date_added": "2026-01-01",
+        "position_title": "", "link": "", "job": "1",
+    }).get_json()
+
+    assert body["job"] is None

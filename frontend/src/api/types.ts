@@ -90,6 +90,10 @@ export interface JobsPage {
 export interface JobDetail {
   interviews: Interview[];
   job_summary?: string;
+  // Only when the caller asks for it (?job=1). The table never does -- it is
+  // expanding a row it already holds -- but the job view is reached by a full
+  // page load and starts with nothing cached. null when the key matches no row.
+  job?: Job | null;
 }
 
 // ---------------------------------------------------------------------------
