@@ -621,7 +621,23 @@ function render() {
     // fetch every job's interview rounds on load -- the row is only hidden by
     // CSS, so a builder that fetches runs for all of them. toggleRow is the
     // mount point now: nothing is built or fetched until a row is opened.
-    mainRow.addEventListener('click', () => toggleRow(mainRow, detailRow, job, detailTd));
+    // A plain click opens the full job view; a modifier keeps the inline panel.
+    // The full view is where the description is readable rather than clamped to
+    // four lines in a 160px column, so it gets the unmodified click. The inline
+    // panel stays on a modifier: it is genuinely good as a quick peek, and the
+    // full view is new enough to want a fallback.
+    //
+    // Deliberately not an <a href> wrapping the row: the row already contains
+    // links (the posting, the company filter), and nesting anchors is how you
+    // end up navigating when the user meant to click one of them.
+    mainRow.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, input, select, textarea')) return;
+      if (e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) {
+        toggleRow(mainRow, detailRow, job, detailTd);
+        return;
+      }
+      window.location.href = jobViewHref(job);
+    });
 
     tbody.appendChild(mainRow);
     tbody.appendChild(detailRow);
@@ -679,6 +695,19 @@ function observeSentinel(tbody, total) {
     render();
   }, { rootMargin: '400px' });   // start drawing before the gap is visible
   sentinelObserver.observe(row);
+}
+
+// Link to the React job view. The whole composite key travels in the query
+// string: `link` is itself a URL and does not survive being a path segment,
+// and company alone is ambiguous for the 174 companies tracked more than once.
+//
+// Deliberately here rather than in job_fields.js. That file is frozen now that
+// the React field layer has taken over -- bugfixes only -- and this is new
+// behaviour. It mirrors jobViewPath() in frontend/src/components/pages/
+// JobViewPage.tsx; the two must agree on the parameter names, which is the
+// cost of not extending a module that is on its way out.
+function jobViewHref(job) {
+  return '/app/job?' + new URLSearchParams(JobFields.jobKeyFields(job)).toString();
 }
 
 async function toggleRow(mainRow, detailRow, job, detailTd) {

@@ -225,6 +225,31 @@ def _decode_cursor(cursor: str) -> list[str]:
     return values
 
 
+def _with_recruiter(row: dict, linked=None) -> dict:
+    """Attach the four recruiter_* fields a job row carries on the wire.
+
+    None of them is a column on `jobs` -- the link lives in recruiter_jobs --
+    so every endpoint handing out a job row has to add them, and a caller that
+    forgets returns something that matches the declared shape everywhere except
+    the recruiter picker, which then quietly renders as unlinked.
+
+    `linked` is supplied by the list route, which scans recruiter_jobs once for
+    the whole page instead of once per row: that runs for every job rendered,
+    against a thousand jobs. A single-row caller omits it and pays for one scan.
+    """
+    if linked is None:
+        linked = get_job_recruiters()
+    hit = linked.get((row["company"], row["date_added"],
+                      row.get("position_title") or "", row.get("link") or ""))
+    row["recruiter_id"] = hit["recruiter_id"] if hit else None
+    row["recruiter_name"] = hit["recruiter_name"] if hit else None
+    row["recruiter_agency"] = hit["recruiter_agency"] if hit else None
+    # Tells the row whether the link came from a mail, which is what makes it
+    # read-only until the user overrides it.
+    row["recruiter_from_triage"] = bool(hit and (hit.get("message_id") or "").strip())
+    return row
+
+
 @app.route("/api/jobs")
 def api_jobs():
     """
@@ -303,18 +328,7 @@ def api_jobs():
     # runs for every job rendered, and the table is tens of rows against a
     # thousand jobs.
     linked = get_job_recruiters()
-    out = []
-    for r in rows:
-        d = dict(r)
-        hit = linked.get((d["company"], d["date_added"],
-                          d.get("position_title") or "", d.get("link") or ""))
-        d["recruiter_id"] = hit["recruiter_id"] if hit else None
-        d["recruiter_name"] = hit["recruiter_name"] if hit else None
-        d["recruiter_agency"] = hit["recruiter_agency"] if hit else None
-        # Tells the row whether the link came from a mail, which is what makes
-        # it read-only until the user overrides it.
-        d["recruiter_from_triage"] = bool(hit and (hit.get("message_id") or "").strip())
-        out.append(d)
+    out = [_with_recruiter(dict(r), linked) for r in rows]
 
     if limit is None:
         return jsonify(out)
@@ -351,6 +365,22 @@ def api_job_detail():
             (key["company"], key["date_added"], key["position_title"], key["link"]),
         ).fetchone()
         payload["job_summary"] = (row["job_summary"] if row else "") or ""
+
+    # ?job=1 adds the row itself. The table never needs it -- it is expanding a
+    # row it already holds -- but the job view at /app is reached by a full page
+    # load out of that table, so it starts with an empty cache and no way to ask
+    # for one row. Without this it had to pull the whole list to find it: 1.5MB
+    # and ~1.2s, measured, on every single open, to render fifteen fields.
+    #
+    # Opt-in rather than always-on, so the table's expand does not start
+    # carrying a payload it would throw away.
+    if request.args.get("job") in ("1", "true", "yes"):
+        row = get_db().execute(
+            f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs WHERE company = ? "
+            "AND date_added = ? AND position_title = ? AND link = ?",
+            (key["company"], key["date_added"], key["position_title"], key["link"]),
+        ).fetchone()
+        payload["job"] = _with_recruiter(dict(row)) if row else None
     return jsonify(payload)
 
 

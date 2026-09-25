@@ -1,0 +1,51 @@
+/*
+ * Type, spacing and measure for the job view.
+ *
+ * Builds on the colour variables in src/static/job_views.css (--bg, --card,
+ * --border, --text, --muted, --accent), which the Jinja templates also use and
+ * which already handle dark mode. Nothing here redefines a colour; this file
+ * is the part job_views.css has no opinion about.
+ *
+ * Why it exists: the legacy detail panel set 11px labels and 13px values with a
+ * flat 14px gap everywhere, inside a three-column grid of `minmax(160px, 1fr)`
+ * in a table cell. Three separate causes of the same complaint -- text too
+ * small, nothing separating a field from a section, and prose squeezed into a
+ * 160px column. The scale below is the fix for the first two; --measure is the
+ * fix for the third.
+ */
+
+:root {
+  /* Type. 13px/1.4 is what "squished" meant; 14px/1.6 is the single biggest
+     readability win here and costs one variable. Labels stay at 11px --
+     they were never the problem, and shrinking the gap between label and
+     value is what makes a field read as one thing. */
+  --fs-label: 11px;
+  --fs-body: 14px;
+  --fs-section: 15px;
+  --fs-tab: 13px;
+  --fs-title: 20px;
+  --lh-body: 1.6;
+
+  /* Spacing. A real scale, so a field gap and a section gap can differ --
+     under the old uniform 14px everything read as one undifferentiated list. */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* The line length for prose, not the column width. This is what lets the
+     content column be wide without the job description becoming unreadable:
+     the column is wide, the line is not. */
+  --measure: 72ch;
+
+  --rail-width: 340px;
+  --radius: 8px;
+
+  /* One breakpoint, deliberately. The GUI binds to 127.0.0.1 and is started
+     from a terminal, so a phone cannot reach it -- a 640px tier would be CSS
+     maintained for a case that cannot happen. This is the half-screened
+     laptop window, which does happen. */
+  --rail-stacks-below: 1000px;
+}

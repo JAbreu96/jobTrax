@@ -1,0 +1,8 @@
+.state {
+  max-width: var(--measure);
+  margin: var(--sp-8) auto;
+  padding: 0 var(--sp-6);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--muted);
+}
