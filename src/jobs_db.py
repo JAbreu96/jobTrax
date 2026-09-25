@@ -297,6 +297,8 @@ def _ensure_schema(conn, path: Optional[str] = None) -> None:
     )
     _ensure_interviews_schema(conn)
     _ensure_recruiters_schema(conn)
+    _ensure_companies_schema(conn)
+    _ensure_prep_schema(conn)
     conn.execute(_META_DDL)
     if path is not None:
         _SCHEMA_ENSURED.add(path)
@@ -2471,3 +2473,340 @@ def duplicate_interview_rounds() -> list[dict]:
         for key, rounds in sorted(groups.items(), key=lambda kv: (kv[0][4] or "", kv[0][0]))
         if len(rounds) > 1
     ]
+
+
+# --- Company research --------------------------------------------------------
+# A notebook about the employer, not about any one posting. 174 companies in
+# this tracker hold more than one role, and everything worth knowing before an
+# interview -- what they build, who funds them, who you would be sitting with --
+# is true of all of them at once. Keying it to a job would mean researching
+# Stripe three times and letting two copies rot.
+#
+# Written by Claude through the MCP tool, read and corrected by hand in the GUI.
+# Nothing here parses or infers: every section is prose somebody chose to write.
+
+COMPANY_SECTIONS = ("about", "product", "team", "funding", "recent_news", "why_me")
+
+_COMPANIES_DDL = """
+        CREATE TABLE IF NOT EXISTS companies (
+            company_key   TEXT PRIMARY KEY,
+            display_name  TEXT NOT NULL DEFAULT '',
+            about         TEXT NOT NULL DEFAULT '',
+            product       TEXT NOT NULL DEFAULT '',
+            team          TEXT NOT NULL DEFAULT '',
+            funding       TEXT NOT NULL DEFAULT '',
+            recent_news   TEXT NOT NULL DEFAULT '',
+            why_me        TEXT NOT NULL DEFAULT '',
+            website       TEXT NOT NULL DEFAULT '',
+            researched_at TEXT NOT NULL DEFAULT '',
+            updated_at    TEXT NOT NULL DEFAULT ''
+        )
+"""
+
+
+def company_key(company: str) -> str:
+    """
+    The normalising key for a company profile: lowercased, whitespace collapsed.
+
+    Deliberately NOT _slugify(). That maps every run of non-alphanumerics to a
+    hyphen and drops anything outside ASCII, so "Adé" and "Ad" become one key
+    and a company whose name is punctuation alone becomes the literal 'role'.
+    A profile is a thing a human wrote; silently merging two employers' notes is
+    worse than keeping two entries.
+
+    This does not survive a rename -- "Fin" and "Fin Inc." are different keys,
+    as they would be under any normalisation short of fuzzy matching. The GUI's
+    rename path carries the profile across instead; see _carry_company_profile
+    in jobs_gui.py.
+    """
+    return " ".join((company or "").lower().split())
+
+
+def _ensure_companies_schema(conn) -> None:
+    conn.execute(_COMPANIES_DDL)
+
+
+def get_company_profile(company: str) -> Optional[dict]:
+    """The stored profile for a company, or None if nothing has been written."""
+    key = company_key(company)
+    if not key:
+        return None
+    conn = _connect()
+    if not conn:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT * FROM companies WHERE company_key = ?", (key,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def set_company_profile(company: str, **sections) -> Optional[dict]:
+    """
+    Upserts one company's profile. Only the sections passed are touched.
+
+    Partial by design: the research skill fills `about` and `product` in one
+    pass and `recent_news` in another, and Joel corrects `why_me` by hand in
+    between. A whole-row write would make each of those three clobber the other
+    two -- which is exactly the flaw in update_notes/update_summary/
+    update_contacts, kept there only because their callers predate this.
+
+    Unknown keys are rejected rather than ignored, so a typo in a tool call
+    fails loudly instead of quietly writing nothing.
+    """
+    key = company_key(company)
+    if not key:
+        return None
+
+    allowed = set(COMPANY_SECTIONS) | {"display_name", "website"}
+    unknown = sorted(set(sections) - allowed)
+    if unknown:
+        raise ValueError(f"unknown company profile field(s): {', '.join(unknown)}")
+
+    # create=True, like every other writer here: _connect() returns None for a
+    # SQLite file that does not exist yet, so researching a company before any
+    # job has been saved would otherwise return None and write nothing.
+    conn = _connect(create=True)
+    if not conn:
+        return None
+    try:
+        conn.execute(
+            "INSERT INTO companies (company_key, display_name) VALUES (?, ?) "
+            "ON CONFLICT(company_key) DO NOTHING",
+            (key, (company or "").strip()),
+        )
+
+        values = {k: (v if v is not None else "") for k, v in sections.items()}
+        # researched_at moves when a research section is written and stays put
+        # when only `website` or `display_name` changes, so correcting a URL
+        # does not make month-old notes look fresh. It does not distinguish the
+        # skill from a hand edit -- both are a human-reviewed refresh of that
+        # section, and the skill reads this to decide what is stale.
+        stamped = date.today().isoformat()
+        if any(k in COMPANY_SECTIONS for k in values):
+            values["researched_at"] = stamped
+        values["updated_at"] = stamped
+        # A profile created by a rename or an early write can hold a blank
+        # display name; fill it the first time a real one comes through.
+        if (company or "").strip():
+            conn.execute(
+                "UPDATE companies SET display_name = ? "
+                "WHERE company_key = ? AND display_name = ''",
+                ((company or "").strip(), key),
+            )
+
+        assignments = ", ".join(f"{k} = ?" for k in values)
+        conn.execute(
+            f"UPDATE companies SET {assignments} WHERE company_key = ?",
+            list(values.values()) + [key],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM companies WHERE company_key = ?", (key,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def rename_company_profile(old_company: str, new_company: str) -> bool:
+    """
+    Moves a profile onto the key a renamed company now uses.
+
+    Refuses when the destination already has a profile: two employers' research
+    merged into one row cannot be unpicked, and the old row staying put is a
+    recoverable outcome. Returns True only when a row actually moved.
+    """
+    old_key, new_key = company_key(old_company), company_key(new_company)
+    if not old_key or not new_key or old_key == new_key:
+        return False
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        taken = conn.execute(
+            "SELECT 1 FROM companies WHERE company_key = ?", (new_key,)
+        ).fetchone()
+        if taken:
+            return False
+        cur = conn.execute(
+            "UPDATE companies SET company_key = ?, display_name = ? "
+            "WHERE company_key = ?",
+            (new_key, (new_company or "").strip(), old_key),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# --- Interview prep ----------------------------------------------------------
+# What to do before a round, and what to ask when you are in it.
+#
+# One table for both, not two. A task and a question have the same shape, the
+# same lifecycle and the same two states -- and `done` on a question means
+# "asked", which is exactly the thing you need to know mid-loop. Splitting them
+# would duplicate every read, write and rename path to distinguish two rows that
+# differ by one word.
+#
+# Keyed on the job, unlike `companies`: preparing for a screen at one company is
+# not preparing for the other role there. That also means these rows orphan on a
+# company rename the way `interviews` and `recruiter_jobs` do, so they join the
+# carry list in jobs_gui.
+
+PREP_KINDS = ("task", "question")
+
+_PREP_ITEMS_DDL = """
+        CREATE TABLE IF NOT EXISTS prep_items (
+            id             INTEGER PRIMARY KEY,
+            company        TEXT NOT NULL,
+            date_added     TEXT NOT NULL DEFAULT '',
+            position_title TEXT NOT NULL DEFAULT '',
+            link           TEXT NOT NULL DEFAULT '',
+            kind           TEXT NOT NULL,
+            body           TEXT NOT NULL,
+            done           INTEGER NOT NULL DEFAULT 0,
+            sort_order     INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL DEFAULT 'hand',
+            created_at     TEXT NOT NULL DEFAULT ''
+        )
+"""
+
+
+def _ensure_prep_schema(conn) -> None:
+    conn.execute(_PREP_ITEMS_DDL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prep_items_job "
+        "ON prep_items (company, date_added, position_title, link)"
+    )
+
+
+def get_prep_items(company: str = "", date_added: str = "",
+                   position_title: str = "", link: str = "") -> list:
+    """
+    Every prep row for one job, tasks before questions, insertion order within each.
+
+    Ordered by (kind, sort_order, id) rather than by `done`: a list that
+    reshuffles itself as you tick things loses your place mid-prep, which is the
+    one moment you are least able to afford it.
+    """
+    conn = _connect()
+    if not conn:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT * FROM prep_items WHERE company = ? AND date_added = ? "
+            "AND position_title = ? AND link = ? "
+            "ORDER BY CASE kind WHEN 'task' THEN 0 ELSE 1 END, sort_order, id",
+            (company, date_added, position_title, link),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_prep_item(company: str, date_added: str, position_title: str, link: str,
+                  kind: str, body: str, source: str = "hand") -> Optional[int]:
+    """
+    Adds one task or question. Returns the new row id, or None if it was refused.
+
+    Refuses a blank body and an unrecognised kind rather than storing either: an
+    empty checklist row cannot be told apart from a rendering fault, and a third
+    `kind` would silently vanish from a UI that renders exactly two sections.
+    """
+    body = (body or "").strip()
+    if not body or kind not in PREP_KINDS:
+        return None
+
+    conn = _connect(create=True)
+    if not conn:
+        return None
+    try:
+        # Appends to the end of its own section. MAX+1 over the job's rows of
+        # that kind, computed in the INSERT so two adds cannot race to the same
+        # position -- which a read-then-write would allow, and which shows up as
+        # two items swapping places on a later reload.
+        cur = conn.execute(
+            "INSERT INTO prep_items (company, date_added, position_title, link, "
+            "kind, body, done, sort_order, source, created_at) "
+            "SELECT ?, ?, ?, ?, ?, ?, 0, "
+            "COALESCE(MAX(sort_order), -1) + 1, ?, ? FROM prep_items "
+            "WHERE company = ? AND date_added = ? AND position_title = ? "
+            "AND link = ? AND kind = ?",
+            (company, date_added, position_title, link, kind, body, source,
+             str(date.today()),
+             company, date_added, position_title, link, kind),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def set_prep_item_done(item_id: int, done: bool) -> bool:
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET done = ? WHERE id = ?",
+            (1 if done else 0, item_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_prep_item(item_id: int, body: str) -> bool:
+    """Rewrites one item's text. A blank body is refused, not stored."""
+    body = (body or "").strip()
+    if not body:
+        return False
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET body = ? WHERE id = ?", (body, item_id))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_prep_item(item_id: int) -> bool:
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute("DELETE FROM prep_items WHERE id = ?", (item_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def carry_prep_items(old_company: str, new_company: str, date_added: str,
+                     position_title: str, link: str) -> int:
+    """
+    Moves a job's prep rows onto its new key after a rename. Returns rows moved.
+
+    Unconditional, unlike the company profile's carry: these rows belong to this
+    posting and to nothing else, so there is no sibling they could be stranding.
+    """
+    conn = _connect()
+    if not conn:
+        return 0
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET company = ? WHERE company = ? AND "
+            "date_added = ? AND position_title = ? AND link = ?",
+            (new_company, old_company, date_added, position_title, link),
+        )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()

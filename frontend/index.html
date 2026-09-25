@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Job Tracker</title>
+    <!--
+      The palette. src/templates/app_shell.html links this before the bundle,
+      and styles/tokens.css is written on top of its variables (--bg, --card,
+      --border, --text, --muted, --accent) rather than redefining them.
+
+      Without it the dev server renders every page unstyled -- no card, no
+      borders, no dark mode -- while `/app` on the built bundle looks correct,
+      so the dev server was usable for behaviour and misleading for anything
+      visual. Served through the /static proxy in vite.config.ts.
+    -->
+    <link rel="stylesheet" href="/static/job_views.css" />
   </head>
   <body>
     <div id="root"></div>

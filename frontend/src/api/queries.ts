@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getJSON } from "./client";
 import type {
   AppConfig,
+  CompanyProfileResponse,
   FunnelStats,
   Job,
   JobDetail,
@@ -52,10 +53,10 @@ export function useJobs(options: UseJobsOptions = {}) {
 
 export function useJobDetail(
   key: JobKey | undefined,
-  options: { summary?: boolean; job?: boolean } = {},
+  options: { summary?: boolean; job?: boolean; prep?: boolean } = {},
 ) {
   return useQuery({
-    queryKey: ["jobDetail", key, options.summary, options.job],
+    queryKey: ["jobDetail", key, options.summary, options.job, options.prep],
     queryFn: () => {
       const k = key as JobKey;
       const params = new URLSearchParams({
@@ -66,6 +67,7 @@ export function useJobDetail(
       });
       if (options.summary === false) params.set("summary", "0");
       if (options.job) params.set("job", "1");
+      if (options.prep) params.set("prep", "1");
       return getJSON<JobDetail>(`/api/jobs/detail?${params.toString()}`);
     },
     enabled: key !== undefined,
@@ -107,5 +109,19 @@ export function useInterviewStats() {
   return useQuery({
     queryKey: ["interviewStats"],
     queryFn: () => getJSON<InterviewStats>("/api/interviews/stats"),
+  });
+}
+
+// Keyed on the company, not the job. Two roles at one employer share the
+// profile and therefore share the cache entry, so researching from one job and
+// opening the other shows the research already there.
+export function useCompanyProfile(company: string | undefined) {
+  return useQuery({
+    queryKey: ["companyProfile", (company || "").trim().toLowerCase()],
+    queryFn: () =>
+      getJSON<CompanyProfileResponse>(
+        `/api/companies/profile?company=${encodeURIComponent(company as string)}`,
+      ),
+    enabled: Boolean((company || "").trim()),
   });
 }

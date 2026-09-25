@@ -8,16 +8,19 @@
  * and a line length (--measure), and giving everything else somewhere to be
  * that is not beside it.
  *
- * Company is deliberately absent from the tab list here. It is a research
- * notebook backed by a `companies` table that does not exist yet; shipping it
- * now would mean a tab that is blank on every job, which teaches you not to
- * click tabs. It joins in the PR that gives it something to read.
+ * Company sits second because it is the tab you open when preparing rather
+ * than when triaging: Overview is the posting, Company is the employer behind
+ * every posting from them, People is who you have spoken to, Prep is the
+ * rounds. That is also roughly the order you need them in as a job moves.
  *
  * Owns no data fetching -- same convention as every field component it
  * composes. JobViewPage does that and passes it down.
  */
 import { useEffect, useRef, useState } from "react";
-import type { Interview, InterviewType, Job, Recruiter } from "../../api/types";
+import type {
+  CompanyProfile, CompanySection, Interview, InterviewType, Job, PrepItem,
+  PrepKind, Recruiter,
+} from "../../api/types";
 import type {
   CreateRecruiterFields, SetRecruiterResult,
 } from "../../hooks/useJobFieldEditing";
@@ -27,12 +30,14 @@ import { DateField } from "./DateField";
 import { DetailField } from "./DetailField";
 import { FollowupField } from "./FollowupField";
 import { InterviewsField } from "./InterviewsField";
+import { CompanyTab } from "./CompanyTab";
 import { MarkdownField } from "./MarkdownField";
+import { PrepChecklist } from "./PrepChecklist";
 import { RecruiterField } from "./RecruiterField";
 import { StatusRail } from "./StatusRail";
 import styles from "./JobView.module.css";
 
-const TABS = ["Overview", "People", "Prep"] as const;
+const TABS = ["Overview", "Company", "People", "Prep"] as const;
 export type TabName = (typeof TABS)[number];
 
 export interface JobViewProps {
@@ -48,6 +53,16 @@ export interface JobViewProps {
     type_label?: string; self_rating?: string; notes?: string;
   }) => Promise<unknown>;
   onDeleteInterview: (id: number) => Promise<unknown>;
+  prepItems?: PrepItem[];
+  onAddPrepItem: (fields: { kind: PrepKind; body: string }) => Promise<unknown>;
+  onSetPrepDone: (id: number, done: boolean) => Promise<unknown>;
+  onEditPrepItem: (id: number, body: string) => Promise<unknown>;
+  onDeletePrepItem: (id: number) => Promise<unknown>;
+  companyProfile?: CompanyProfile | null;
+  companyLoading?: boolean;
+  onSaveCompanySection: (
+    field: CompanySection | "website", value: string,
+  ) => void | Promise<unknown>;
   onDelete: () => void | Promise<unknown>;
   onClose?: () => void;
   confirm?: ConfirmFn;
@@ -58,6 +73,8 @@ export function JobView({
   job, rounds, interviewTypes, recruiters,
   onSaveField, setRecruiter, createRecruiter,
   onAddInterview, onDeleteInterview, onDelete, onClose,
+  companyProfile = null, companyLoading, onSaveCompanySection,
+  prepItems = [], onAddPrepItem, onSetPrepDone, onEditPrepItem, onDeletePrepItem,
   confirm = defaultConfirm, notify = defaultNotify,
 }: JobViewProps) {
   // Always Overview on open, never the last tab used. "Readable on a whim"
@@ -152,6 +169,12 @@ export function JobView({
             </section>
           </Panel>
 
+          <Panel name="Company" active={tab}>
+            <CompanyTab company={job.company} profile={companyProfile}
+                        isLoading={companyLoading}
+                        onSaveSection={onSaveCompanySection} />
+          </Panel>
+
           <Panel name="People" active={tab}>
             <RecruiterField job={job} recruiters={recruiters}
                             setRecruiter={setRecruiter} createRecruiter={createRecruiter}
@@ -163,10 +186,26 @@ export function JobView({
                            fieldClass={styles.field} onSave={save("followup_log")} />
           </Panel>
 
+          {/* Checklist first, rounds last. The rounds are a record of what is
+              booked; the checklist is the thing you act on, and only 2 of the
+              1,314 tracked jobs have a round still in the future -- so leading
+              with the schedule would lead with an empty box on almost every
+              job. */}
           <Panel name="Prep" active={tab}>
-            <InterviewsField rounds={rounds} interviewTypes={interviewTypes}
-                             onAdd={onAddInterview} onDelete={onDeleteInterview}
-                             confirm={confirm} />
+            <PrepChecklist items={prepItems}
+                           onAdd={onAddPrepItem} onSetDone={onSetPrepDone}
+                           onEdit={onEditPrepItem} onDelete={onDeletePrepItem}
+                           confirm={confirm} />
+            {/* styles.prepHeading, not sectionHeading: this sits directly
+                under two headings PrepChecklist renders as small uppercase
+                labels, and a 15px semibold "Rounds" beneath them reads as a
+                different kind of thing rather than the third section. */}
+            <section className={styles.section}>
+              <h3 className={styles.prepHeading}>Rounds</h3>
+              <InterviewsField rounds={rounds} interviewTypes={interviewTypes}
+                               onAdd={onAddInterview} onDelete={onDeleteInterview}
+                               confirm={confirm} />
+            </section>
           </Panel>
         </div>
 

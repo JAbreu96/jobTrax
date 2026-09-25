@@ -8,7 +8,11 @@
  * company alone is ambiguous for the 174 companies with more than one role.
  */
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useConfig, useJobDetail, useRecruiters } from "../../api/queries";
+import {
+  useCompanyProfile, useConfig, useJobDetail, useRecruiters,
+} from "../../api/queries";
+import { useCompanyEditing } from "../../hooks/useCompanyEditing";
+import { usePrepEditing } from "../../hooks/usePrepEditing";
 import { useInterviewEditing } from "../../hooks/useInterviewEditing";
 import { useJobFieldEditing } from "../../hooks/useJobFieldEditing";
 import type { Job, JobKey } from "../../api/types";
@@ -52,13 +56,22 @@ export default function JobViewPage() {
    * Jinja table, so the cache is always empty on arrival and "already cached"
    * never happens. Every open paid 1.5MB and ~1.2s to find fifteen fields.
    */
-  const detail = useJobDetail(key, { job: true });
+  const detail = useJobDetail(key, { job: true, prep: true });
   const job = detail.data?.job;
 
   const { saveField, deleteJob, setRecruiter, createRecruiter } = useJobFieldEditing({
     onDeleted: () => navigate("/"),
   });
   const { addInterview, deleteInterview } = useInterviewEditing(key ?? ({} as JobKey));
+  /*
+   * Keyed on the company, so it is fetched alongside the job rather than out of
+   * it: the profile belongs to the employer and is shared by every role tracked
+   * there. Its own request, because it has its own cache lifetime -- the job
+   * detail is re-read on every open, the research is not.
+   */
+  const companyProfile = useCompanyProfile(key?.company);
+  const { saveSection } = useCompanyEditing(key?.company ?? "");
+  const prep = usePrepEditing(key ?? ({} as JobKey));
 
   if (!key) return <p className={styles.state}>No job specified.</p>;
   if (detail.isLoading) return <p className={styles.state}>Loading…</p>;
@@ -83,6 +96,14 @@ export default function JobViewPage() {
         createRecruiter.mutateAsync(fields).then((r) => r.recruiter)}
       onAddInterview={(fields) => addInterview.mutateAsync(fields)}
       onDeleteInterview={(id) => deleteInterview.mutateAsync(id)}
+      companyProfile={companyProfile.data?.profile ?? null}
+      companyLoading={companyProfile.isLoading}
+      onSaveCompanySection={(field, value) => saveSection.mutateAsync({ field, value })}
+      prepItems={detail.data?.prep_items ?? []}
+      onAddPrepItem={(fields) => prep.addItem.mutateAsync(fields)}
+      onSetPrepDone={(id, done) => prep.setDone.mutateAsync({ id, done })}
+      onEditPrepItem={(id, body) => prep.editItem.mutateAsync({ id, body })}
+      onDeletePrepItem={(id) => prep.deleteItem.mutateAsync(id)}
       onDelete={() => deleteJob.mutateAsync(job)}
     />
   );

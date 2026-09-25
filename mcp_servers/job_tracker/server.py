@@ -583,5 +583,169 @@ def record_recruiter_reply(identity: str, source: str = "email",
     return {"recruiter_id": recruiter_id, "recorded": when}
 
 
+# --- Interview prep ----------------------------------------------------------
+# Job-level, so unlike the company tools these do have to disambiguate: 174
+# companies here hold more than one role, and a prep plan for a robotics screen
+# is not a prep plan for the fullstack one.
+
+def _resolve_job(company: str, position_title: str = "", link: str = "") -> dict:
+    """The narrowing every job-level tool here does, in one place."""
+    if position_title or link:
+        matches = _narrow(_match_company(jobs_db.get_all_jobs(), company),
+                          position_title, link)
+        if not matches:
+            raise ValueError(
+                f"No job found for company '{company}' matching title "
+                f"'{position_title}' / link '{link}'."
+            )
+        if len(matches) > 1:
+            titles = ", ".join(r["position_title"] for r in matches)
+            raise ValueError(
+                f"Ambiguous — {len(matches)} roles at '{company}' match: {titles}. "
+                "Pass an exact link."
+            )
+        return matches[0]
+    return _find_one_match(company)
+
+
+@mcp.tool()
+def get_prep_plan(company: str, position_title: str = "", link: str = "") -> dict:
+    """
+    Read the prep checklist and the questions stored for one job.
+
+    Check this before writing a plan -- items already there were either written
+    by the candidate or ticked off, and appending duplicates of them is worse
+    than adding nothing.
+    - company: case-insensitive match
+    - position_title / link: required when the company has more than one role
+    """
+    row = _resolve_job(company, position_title, link)
+    items = jobs_db.get_prep_items(row["company"], row["date_added"],
+                                   row["position_title"], row["link"])
+    return {
+        "company": row["company"], "position_title": row["position_title"],
+        "tasks": [{"id": i["id"], "body": i["body"], "done": bool(i["done"])}
+                  for i in items if i["kind"] == "task"],
+        "questions": [{"id": i["id"], "body": i["body"], "done": bool(i["done"])}
+                      for i in items if i["kind"] == "question"],
+    }
+
+
+@mcp.tool()
+def add_prep_plan(company: str, tasks: list[str] = [], questions: list[str] = [],
+                  position_title: str = "", link: str = "") -> dict:
+    """
+    Append prep tasks and questions to ask, for one job.
+
+    Appends; never replaces. The candidate ticks items off and writes their own,
+    and a replacing write would throw that away -- so read get_prep_plan first
+    and add only what is missing.
+
+    Write things that need doing before this specific round at this specific
+    company, not generic interview advice. A question is one you would actually
+    ask them, phrased to be said out loud.
+
+    - company: case-insensitive match
+    - tasks: things to do before the interview
+    - questions: things to ask them during it
+    - position_title / link: required when the company has more than one role
+    """
+    row = _resolve_job(company, position_title, link)
+    written = {"tasks": 0, "questions": 0}
+    refused = []
+
+    for kind, bodies, label in (("task", tasks, "tasks"),
+                                ("question", questions, "questions")):
+        for body in bodies or []:
+            item_id = jobs_db.add_prep_item(
+                row["company"], row["date_added"], row["position_title"],
+                row["link"], kind, body, source="claude")
+            if item_id is None:
+                refused.append(body)
+            else:
+                written[label] += 1
+
+    if not written["tasks"] and not written["questions"]:
+        return {"success": False,
+                "error": "Nothing was written — pass at least one non-empty task or question."}
+    result = {"success": True, "company": row["company"],
+              "position_title": row["position_title"], "added": written}
+    if refused:
+        result["refused_as_blank"] = refused
+    return result
+
+
+# --- Company research --------------------------------------------------------
+# These two are the only tools here that do NOT go through _find_one_match, and
+# that is the point. A company profile is keyed on the employer, so the
+# ambiguity that forces every job-level tool to disambiguate -- 174 companies in
+# this tracker hold more than one role -- simply does not arise: all of them
+# share the one profile, which is the reason it is stored this way.
+
+@mcp.tool()
+def get_company_profile(company: str) -> dict:
+    """
+    Read the stored research notebook for a company.
+
+    Returns the sections written so far plus `researched_at`, the date research
+    was last refreshed -- check it before re-researching, and prefer updating
+    the stale sections over rewriting all of them.
+    - company: employer name; matched case-insensitively, whitespace collapsed
+    """
+    profile = jobs_db.get_company_profile(company)
+    if not profile:
+        return {"company": company, "profile": None,
+                "note": "No research stored for this company yet."}
+    return {"company": company, "profile": profile}
+
+
+@mcp.tool()
+def set_company_profile(
+    company: str,
+    about: str = "",
+    product: str = "",
+    team: str = "",
+    funding: str = "",
+    recent_news: str = "",
+    why_me: str = "",
+    website: str = "",
+) -> dict:
+    """
+    Write research about a company. Only the sections you pass are changed.
+
+    Partial writes are intended: fill `about` and `product` in one pass and
+    `recent_news` later without clobbering either. Every section is Markdown
+    prose a human will read before an interview -- write what is actually known
+    and leave a section out rather than filling it with hedging.
+
+    - company: employer name, exactly as it appears on the job rows if possible
+    - about: what the company is, its stage, its market
+    - product: what they actually build, and how it works
+    - team: the people -- founders, the hiring team, anyone named in the process
+    - funding: rounds, investors, amounts, dates
+    - recent_news: launches, raises, press, anything from the last few months
+    - why_me: the honest case for this candidate at this company
+    - website: canonical URL
+
+    An empty string leaves a section alone rather than clearing it -- there is
+    no way to blank a section from here, on purpose, since every caller is a
+    model that might omit a field it simply did not research. Clear one by hand
+    in the GUI.
+    """
+    sections = {k: v for k, v in {
+        "about": about, "product": product, "team": team, "funding": funding,
+        "recent_news": recent_news, "why_me": why_me, "website": website,
+    }.items() if v}
+    if not sections:
+        return {"success": False,
+                "error": "Pass at least one section to write."}
+
+    profile = jobs_db.set_company_profile(company, **sections)
+    if profile is None:
+        return {"success": False, "error": "Could not write the company profile."}
+    return {"success": True, "company": company,
+            "written": sorted(sections), "profile": profile}
+
+
 if __name__ == "__main__":
     mcp.run()

@@ -67,6 +67,21 @@ export interface MarkdownFieldProps {
    * does not persist anything itself -- Phase 3's save hook wires this up.
    */
   onSave?: (value: string) => void | Promise<void>;
+  /**
+   * What to render in place of the content when the field is empty. Defaults
+   * to parseMarkdown's "(empty)", which is the right answer for a field that
+   * is usually filled; a caller whose fields start empty by design (the
+   * company research notebook) says what belongs there instead.
+   */
+  placeholder?: string;
+  /**
+   * Element to render `label` as. The default `label` is right for a field in
+   * a form; a caller whose fields are the sections of a document (the company
+   * research notebook) passes "h3", so the page can be navigated by heading
+   * and the Edit control still shares the heading's row instead of floating
+   * on one of its own.
+   */
+  labelAs?: "label" | "h3";
 }
 
 export function MarkdownField({
@@ -77,6 +92,8 @@ export function MarkdownField({
   fadeColor,
   expandable = true,
   onSave,
+  placeholder,
+  labelAs = "label",
 }: MarkdownFieldProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -142,7 +159,7 @@ export function MarkdownField({
   return (
     <div className={wrapperClassName} style={wrapperStyle}>
       <div className={styles.header}>
-        <label>{label}</label>
+        {labelAs === "h3" ? <h3>{label}</h3> : <label>{label}</label>}
         {!isEditing && (
           <button type="button" className={styles.editBtn} onClick={startEditing}>
             Edit
@@ -163,9 +180,15 @@ export function MarkdownField({
         <div
           ref={renderedRef}
           data-testid="markdown-rendered"
-          className={[styles.rendered, forceExpanded ? styles.expanded : ""].filter(Boolean).join(" ")}
+          className={[
+            styles.rendered,
+            forceExpanded ? styles.expanded : "",
+            !forceExpanded && overflowing ? styles.clamped : "",
+          ].filter(Boolean).join(" ")}
         >
-          {parseMarkdown(value)}
+          {placeholder && !value.trim()
+            ? <p className={styles.placeholder}>{placeholder}</p>
+            : parseMarkdown(value)}
         </div>
       )}
 

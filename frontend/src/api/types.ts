@@ -88,6 +88,7 @@ export interface JobsPage {
 // GET /api/jobs/detail. job_summary is present unless the caller passed
 // ?summary=0 (the client already has it cached), so it's optional here.
 export interface JobDetail {
+  prep_items?: PrepItem[];
   interviews: Interview[];
   job_summary?: string;
   // Only when the caller asks for it (?job=1). The table never does -- it is
@@ -286,4 +287,56 @@ export interface SilenceStats {
   no_response_rows: SilenceRow[];
   ghosted_after_days: number;
   no_response_after_days: number;
+}
+
+// ---------------------------------------------------------------------------
+// Company research
+// ---------------------------------------------------------------------------
+
+// The order here is the order the Company tab renders, and it is a reading
+// order rather than an alphabetical one: what the company is, then what they
+// build, then who you would work with, then the money, then what just
+// happened, then your own angle on it.
+export const COMPANY_SECTIONS = [
+  "about", "product", "team", "funding", "recent_news", "why_me",
+] as const;
+
+export type CompanySection = (typeof COMPANY_SECTIONS)[number];
+
+export interface CompanyProfile extends Record<CompanySection, string> {
+  company_key: string;
+  display_name: string;
+  website: string;
+  researched_at: string;
+  updated_at: string;
+}
+
+// GET /api/companies/profile. `profile` is null for a company nobody has
+// researched yet -- the common case, and not an error.
+export interface CompanyProfileResponse {
+  company: string;
+  profile: CompanyProfile | null;
+}
+
+// ---------------------------------------------------------------------------
+// Interview prep
+// ---------------------------------------------------------------------------
+
+// One table for both, because a task and a question have the same shape and the
+// same lifecycle -- and `done` on a question means "asked", which is the state
+// you actually need mid-loop.
+export type PrepKind = "task" | "question";
+
+export interface PrepItem {
+  id: number;
+  company: string;
+  date_added: string;
+  position_title: string;
+  link: string;
+  kind: PrepKind;
+  body: string;
+  done: number;
+  sort_order: number;
+  source: string;
+  created_at: string;
 }

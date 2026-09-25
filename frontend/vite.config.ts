@@ -31,7 +31,15 @@ export default defineConfig({
   server: {
     proxy: {
       // Flask dev server, per the module docstring of src/jobs_gui.py.
-      "/api": "http://127.0.0.1:5151",
+      //
+      // Overridable because this repo is worked in git worktrees, several of
+      // which run their own Flask at once: a hardcoded 5151 sends every
+      // worktree's dev server to whichever process bound the port first, which
+      // on screen looks exactly like the branch's own API changes not existing.
+      //   API_PORT=5153 npm run dev
+      "/api": `http://127.0.0.1:${process.env.API_PORT || 5151}`,
+      // index.html pulls the palette from here; see the comment there.
+      "/static": `http://127.0.0.1:${process.env.API_PORT || 5151}`,
     },
   },
 });
