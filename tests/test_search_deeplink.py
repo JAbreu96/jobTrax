@@ -51,4 +51,39 @@ def test_archived_inclusion_comes_from_the_shared_helper(html):
 
 
 def test_arriving_with_a_search_says_so(html):
-    assert "showSearchBanner" in html
+    """
+    "showSearchBanner" alone is satisfied by the function's own declaration
+    ("function showSearchBanner() {") with nobody ever calling it. The call
+    site ends "();" immediately, which the declaration does not -- pinning
+    that a call exists, not just that the name is spelled somewhere.
+    """
+    assert "showSearchBanner();" in html
+
+
+def _listener_body(html):
+    """The body of the #search input listener, isolated from the rest of the
+    inline script -- a page-wide substring check for one of its statements
+    would also be satisfied by that same text sitting somewhere else on the
+    page entirely."""
+    start = html.index("getElementById('search').addEventListener('input'")
+    return html[start:html.index("});", start)]
+
+
+def test_typing_also_re_renders_the_table(html):
+    """
+    The listener is three statements now, not the original one-liner that
+    only updated the URL. Drop the trailing renderFromTop() and the address
+    bar keeps changing while the table quietly stops filtering -- and every
+    other assertion in this file would keep passing.
+    """
+    assert "renderFromTop();" in _listener_body(html)
+
+
+def test_typing_keeps_the_banner_honest(html):
+    """
+    showSearchBanner() computed once at load and never again would keep
+    naming the query the page arrived with after the box was retyped,
+    contradicting the table directly beneath it. The listener has to call it
+    again on every keystroke, not just re-render the rows.
+    """
+    assert "showSearchBanner();" in _listener_body(html)

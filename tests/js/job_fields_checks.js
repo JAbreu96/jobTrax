@@ -82,7 +82,7 @@ function assertEqual(actual, expected, msg) {
 const EXPORTS = [
   'rowKey', 'localISODate', 'startOfWeekISO', 'isValidISODate',
   'parseFollowupLog', 'serializeFollowupLog', 'jobKeyFields',
-  'searchFromQuery', 'queryWithSearch', 'wantsArchived',
+  'searchFromQuery', 'queryWithSearch', 'wantsArchived', 'searchBannerText',
   'renderMarkdownInto', 'appendInlineMarkdown', 'checkMarkdownOverflow',
   'refreshMarkdownFields', 'saveField', 'deleteJob', 'postJSON',
   'loadRecruiters', 'recruiterBadge', 'recruiterLabel', 'saveJobRecruiter',
@@ -214,6 +214,21 @@ check('wantsArchived is false for a plain search', () => {
   // A typed search must not silently change the population being searched.
   assertEqual(JobFields.wantsArchived('?q=Acme'), false);
   assertEqual(JobFields.wantsArchived(''), false);
+});
+
+check('searchBannerText names the current query', () => {
+  assertEqual(JobFields.searchBannerText('Sciforium'), 'Searching for “Sciforium”');
+});
+
+check('searchBannerText tracks whatever query it is given, not a stale one', () => {
+  // The bug this guards: a banner computed once at load and never
+  // recomputed would keep saying the arrival term after the box changed.
+  assertEqual(JobFields.searchBannerText('Acme'), 'Searching for “Acme”');
+});
+
+check('searchBannerText is null once the box is cleared', () => {
+  assertEqual(JobFields.searchBannerText(''), null);
+  assertEqual(JobFields.searchBannerText('   '), null);
 });
 
 check('recruiterLabel pairs the name with the agency', () => {

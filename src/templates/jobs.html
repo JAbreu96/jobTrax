@@ -806,12 +806,22 @@ function showFunnelBanner() {
 function showSearchBanner() {
   // The funnel banner already owns the bar when both params are present, and
   // two stacked banners would say the same thing twice.
-  const q = JobFields.searchFromQuery(window.location.search);
-  if (!q || FUNNEL_FILTER) return;
+  if (FUNNEL_FILTER) return;
+  // Re-derives from the URL and rebuilds every call, rather than caching
+  // the term from the first load: a banner that only ever reflected the
+  // arrival query would keep reading "Searching for Sciforium" after the
+  // box was retyped to "Acme", contradicting the table directly beneath it.
+  // The wording itself is JobFields.searchBannerText() -- pure, and where
+  // tests/js/job_fields_checks.js can reach it -- this only decides whether
+  // the bar exists at all.
+  const existing = document.querySelector('.funnel-banner');
+  const text = JobFields.searchBannerText(JobFields.searchFromQuery(window.location.search));
+  if (!text) { if (existing) existing.remove(); return; }
+  if (existing) existing.remove();
   const bar = document.createElement('div');
   bar.className = 'funnel-banner';
   const txt = document.createElement('span');
-  txt.textContent = `Searching for “${q}”`;
+  txt.textContent = text;
   if (JobFields.wantsArchived(window.location.search)) {
     const note = document.createElement('span');
     note.className = 'muted-inline';
@@ -1038,6 +1048,10 @@ document.getElementById('search').addEventListener('input', (e) => {
   // cleared search lands on / rather than on a bare '?'.
   history.replaceState(null, '',
     location.pathname + JobFields.queryWithSearch(location.search, e.target.value));
+  // Reads location.search fresh, which replaceState above just updated --
+  // otherwise the banner keeps naming the query the page arrived with while
+  // the table below it has already moved on.
+  showSearchBanner();
   renderFromTop();
 });
 function paintSortHeaders() {
