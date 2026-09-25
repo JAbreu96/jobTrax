@@ -1,9 +1,11 @@
 /*
- * The read-only jobs table.
+ * The jobs table.
  *
- * The cases worth pinning are the two the vanilla table got right for
- * non-obvious reasons: sorting happens before windowing, and "rendered
- * everything that has arrived" is not "rendered the whole list".
+ * The cases worth pinning are the ones the vanilla table got right for
+ * non-obvious reasons: sorting happens before windowing, "rendered everything
+ * that has arrived" is not "rendered the whole list", and an editable cell has
+ * to swallow the click that would otherwise navigate away from the row you are
+ * trying to edit.
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
@@ -28,14 +30,18 @@ function many(n: number): Job[] {
     job({ company: `Co ${String(i).padStart(4, "0")}`, link: `l${i}` }));
 }
 
+const STATUSES = ["", "Tracking", "Applied", "Phone Screen", "Rejected"];
+
 function renderTable(props: Partial<React.ComponentProps<typeof JobsTable>> = {}) {
   const onOpenJob = vi.fn();
   const onSortChange = vi.fn();
+  const onSaveField = vi.fn().mockResolvedValue(true);
   const result = render(
-    <JobsTable jobs={[job()]} sort={null}
-               onSortChange={onSortChange} onOpenJob={onOpenJob} {...props} />,
+    <JobsTable jobs={[job()]} sort={null} statuses={STATUSES}
+               onSortChange={onSortChange} onOpenJob={onOpenJob}
+               onSaveField={onSaveField} {...props} />,
   );
-  return { onOpenJob, onSortChange, ...result };
+  return { onOpenJob, onSortChange, onSaveField, ...result };
 }
 
 function bodyRows() {
@@ -52,10 +58,10 @@ describe("JobsTable", () => {
   });
 
   it("opens a job when its row is clicked", async () => {
-    const rows = [job({ company: "Globex" })];
+    const rows = [job({ company: "Globex", position_title: "Engineer" })];
     const { onOpenJob } = renderTable({ jobs: rows });
 
-    await userEvent.click(screen.getByText("Globex"));
+    await userEvent.click(screen.getByText("Engineer"));
 
     expect(onOpenJob).toHaveBeenCalledWith(rows[0]);
   });
@@ -80,12 +86,14 @@ describe("JobsTable", () => {
       { column: "company", direction: "asc" });
 
     rerender(<JobsTable jobs={[job()]} sort={{ column: "company", direction: "asc" }}
+                        statuses={STATUSES} onSaveField={vi.fn().mockResolvedValue(true)}
                         onSortChange={onSortChange} onOpenJob={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: "Company" }));
     expect(onSortChange).toHaveBeenLastCalledWith(
       { column: "company", direction: "desc" });
 
     rerender(<JobsTable jobs={[job()]} sort={{ column: "company", direction: "desc" }}
+                        statuses={STATUSES} onSaveField={vi.fn().mockResolvedValue(true)}
                         onSortChange={onSortChange} onOpenJob={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: "Company" }));
     expect(onSortChange).toHaveBeenLastCalledWith(null);
@@ -106,8 +114,9 @@ describe("JobsTable", () => {
     const jobs = many(RENDER_CHUNK * 3);
     renderTable({ jobs, sort: { column: "company", direction: "desc" } });
 
-    const first = within(bodyRows()[0]).getByText(/^Co /);
-    expect(first).toHaveTextContent(`Co ${String(jobs.length - 1).padStart(4, "0")}`);
+    // The company is an <input> now, so read its value rather than its text.
+    const first = within(bodyRows()[0]).getByRole("textbox");
+    expect(first).toHaveValue(`Co ${String(jobs.length - 1).padStart(4, "0")}`);
   });
 
   it("renders only the first chunk of a long list", () => {
@@ -141,6 +150,106 @@ describe("JobsTable", () => {
     renderTable({ jobs: many(3) });
 
     expect(screen.queryByText(/stopped loading early/)).toBeNull();
+  });
+});
+
+describe("JobsTable editing", () => {
+  it("does not open the row when the company cell is clicked", async () => {
+    // Otherwise placing a cursor in the field navigates away from the row you
+    // are trying to edit.
+    const { onOpenJob } = renderTable({ jobs: [job({ company: "Globex" })] });
+
+    await userEvent.click(screen.getByRole("textbox"));
+
+    expect(onOpenJob).not.toHaveBeenCalled();
+  });
+
+  it("saves a renamed company on blur", async () => {
+    const rows = [job({ company: "Globex" })];
+    const { onSaveField } = renderTable({ jobs: rows });
+
+    const cell = screen.getByRole("textbox");
+    await userEvent.clear(cell);
+    await userEvent.type(cell, "Globex Inc");
+    await userEvent.tab();
+
+    expect(onSaveField).toHaveBeenCalledWith(rows[0], "company", "Globex Inc");
+  });
+
+  it("does not save a company that did not change", async () => {
+    const { onSaveField } = renderTable({ jobs: [job({ company: "Globex" })] });
+
+    await userEvent.click(screen.getByRole("textbox"));
+    await userEvent.tab();
+
+    expect(onSaveField).not.toHaveBeenCalled();
+  });
+
+  it("restores the old name rather than sending a blank one", async () => {
+    // The server refuses a blank company; sending it would fail and leave the
+    // cell showing nothing.
+    const { onSaveField } = renderTable({ jobs: [job({ company: "Globex" })] });
+
+    const cell = screen.getByRole("textbox");
+    await userEvent.clear(cell);
+    await userEvent.tab();
+
+    expect(onSaveField).not.toHaveBeenCalled();
+    expect(cell).toHaveValue("Globex");
+  });
+
+  it("puts the old name back when the rename is refused", async () => {
+    // A rename moves the row to a new primary key and can collide with a job
+    // already at it. The server answers 409 and writes nothing, so showing the
+    // new name would be a lie about what is stored.
+    const onSaveField = vi.fn().mockResolvedValue(false);
+    render(
+      <JobsTable jobs={[job({ company: "Globex" })]} sort={null} statuses={STATUSES}
+                 onSortChange={vi.fn()} onOpenJob={vi.fn()} onSaveField={onSaveField} />,
+    );
+
+    const cell = screen.getByRole("textbox");
+    await userEvent.clear(cell);
+    await userEvent.type(cell, "Acme");
+    await userEvent.tab();
+
+    expect(cell).toHaveValue("Globex");
+  });
+
+  it("reverts an edit on Escape without saving", async () => {
+    const { onSaveField } = renderTable({ jobs: [job({ company: "Globex" })] });
+
+    const cell = screen.getByRole("textbox");
+    await userEvent.clear(cell);
+    await userEvent.type(cell, "Typo{Escape}");
+
+    expect(onSaveField).not.toHaveBeenCalled();
+    expect(cell).toHaveValue("Globex");
+  });
+
+  it("saves a status change", async () => {
+    const rows = [job({ status: "Tracking" })];
+    const { onSaveField } = renderTable({ jobs: rows });
+
+    await userEvent.selectOptions(screen.getByRole("combobox"), "Applied");
+
+    expect(onSaveField).toHaveBeenCalledWith(rows[0], "status", "Applied");
+  });
+
+  it("does not open the row when the status picker is used", async () => {
+    const { onOpenJob } = renderTable();
+
+    await userEvent.click(screen.getByRole("combobox"));
+
+    expect(onOpenJob).not.toHaveBeenCalled();
+  });
+
+  it("offers every status the server accepts, including the blank one", () => {
+    renderTable();
+
+    expect([...screen.getByRole("combobox").querySelectorAll("option")]
+      .map((o) => o.textContent))
+      .toEqual(["(none)", "Tracking", "Applied", "Phone Screen", "Rejected"]);
   });
 });
 

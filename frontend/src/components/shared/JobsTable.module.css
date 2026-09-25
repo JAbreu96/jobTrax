@@ -73,3 +73,29 @@
 }
 
 .truncated { color: #b3261e; }
+
+/* Editable cells are styled to look like the text around them until you
+   interact -- a table of input boxes reads as a form, not as a list. */
+.cellInput,
+.cellSelect {
+  font: inherit;
+  width: 100%;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+.cellInput:hover,
+.cellSelect:hover { border-color: var(--border); }
+.cellInput:focus,
+.cellSelect:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
+}
+.cellInput:disabled,
+.cellSelect:disabled { opacity: 0.6; }
+
+.cellSelect { cursor: pointer; }

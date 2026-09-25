@@ -564,6 +564,7 @@ def api_update_job():
                 "error": f"A job for '{value}' on {date_added} already exists."
             }), 409
 
+    matched = 0
     date_applied_value = None
     if field == "status" and value in APPLIED_STATUSES:
         row = db.execute(
@@ -576,18 +577,20 @@ def api_update_job():
 
     try:
         if date_applied_value is not None:
-            db.execute(
+            cur = db.execute(
                 "UPDATE jobs SET status = ?, date_applied = ? WHERE company = ? "
                 "AND date_added = ? AND position_title = ? AND link = ?",
                 (value, date_applied_value, company, date_added,
                  position_title or "", row_link or ""),
             )
+            matched = cur.rowcount
         else:
-            db.execute(
+            cur = db.execute(
                 f"UPDATE jobs SET {field} = ? WHERE company = ? AND date_added = ? "
                 f"AND position_title = ? AND link = ?",
                 (value, company, date_added, position_title or "", row_link or ""),
             )
+            matched = cur.rowcount
         if field == "company" and value != company:
             _carry_children(db, company, value, date_added,
                             position_title or "", row_link or "")
@@ -597,6 +600,13 @@ def api_update_job():
         return jsonify({
             "error": f"A job for '{value}' on {date_added} already exists."
         }), 409
+
+    # An UPDATE that matched nothing used to answer {"ok": true}, so a write
+    # against a key that had already moved -- a row renamed in another tab, a
+    # stale list -- wrote nothing and the client showed the new value anyway.
+    # The only visible symptom was a field that reverted on the next reload.
+    if not matched:
+        return jsonify({"error": "Job not found — it may have been renamed or deleted."}), 404
 
     result = {"ok": True}
     if date_applied_value is not None:

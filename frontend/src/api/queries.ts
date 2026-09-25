@@ -9,10 +9,8 @@ import type {
   AppConfig,
   CompanyProfileResponse,
   FunnelStats,
-  Job,
   JobDetail,
   JobKey,
-  JobsPage,
   RecruitersResponse,
   SilenceStats,
   InterviewStats,
@@ -23,31 +21,6 @@ export function useConfig() {
   return useQuery({
     queryKey: ["config"],
     queryFn: () => getJSON<AppConfig>("/api/config"),
-  });
-}
-
-export interface UseJobsOptions {
-  limit?: number;
-  cursor?: string;
-  includeArchived?: boolean;
-}
-
-// /api/jobs returns a bare Job[] with no ?limit, or {jobs, next_cursor} with
-// one. This hook always resolves to a JobsPage so callers don't have to
-// branch on the caller's own arguments to know which shape came back.
-export function useJobs(options: UseJobsOptions = {}) {
-  const params = new URLSearchParams();
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  if (options.cursor) params.set("cursor", options.cursor);
-  if (options.includeArchived) params.set("include_archived", "1");
-  const qs = params.toString();
-
-  return useQuery({
-    queryKey: ["jobs", options],
-    queryFn: async (): Promise<JobsPage> => {
-      const data = await getJSON<Job[] | JobsPage>(`/api/jobs${qs ? `?${qs}` : ""}`);
-      return Array.isArray(data) ? { jobs: data, next_cursor: null } : data;
-    },
   });
 }
 

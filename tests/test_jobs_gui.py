@@ -578,3 +578,39 @@ def test_an_unknown_key_reports_no_row_rather_than_erroring(client):
     }).get_json()
 
     assert body["job"] is None
+
+
+def test_update_404s_when_it_matches_no_row(client):
+    """
+    It used to answer {"ok": true}. A write against a key that had already
+    moved -- a row renamed in another tab, a stale list -- wrote nothing and
+    the client showed the new value anyway, with the only visible symptom a
+    field that reverted on the next reload.
+    """
+    res = client.post("/api/jobs/update", json={
+        "company": "No Such Company", "date_added": "2020-01-01",
+        "position_title": "x", "link": "", "field": "status", "value": "Applied",
+    })
+
+    assert res.status_code == 404
+
+
+def test_update_404s_on_a_stale_key_even_for_a_dating_status(client):
+    """The date_applied branch is a separate UPDATE and needs the same check."""
+    res = client.post("/api/jobs/update", json={
+        "company": "No Such Company", "date_added": "2020-01-01",
+        "position_title": "x", "link": "", "field": "status", "value": "Applied",
+    })
+
+    assert res.status_code == 404
+    assert "renamed or deleted" in res.get_json()["error"]
+
+
+def test_update_still_succeeds_for_a_row_that_exists(client):
+    res = client.post("/api/jobs/update", json={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "field": "notes", "value": "hello",
+    })
+
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True
