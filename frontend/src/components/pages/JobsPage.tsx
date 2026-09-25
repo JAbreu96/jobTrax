@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useConfig } from "../../api/queries";
+import { useJobFieldEditing } from "../../hooks/useJobFieldEditing";
 import { useJobsProgressive } from "../../hooks/useJobsProgressive";
 import { JobFilterBar } from "../shared/JobFilterBar";
 import { JobsTable } from "../shared/JobsTable";
@@ -37,6 +38,7 @@ export default function JobsPage() {
 
   const config = useConfig();
   const list = useJobsProgressive({ includeArchived });
+  const { saveField } = useJobFieldEditing();
   const jobs = useMemo(() => list.data?.jobs ?? [], [list.data]);
 
   const matched = useMemo(
@@ -92,6 +94,21 @@ export default function JobsPage() {
             sort={sort}
             onSortChange={setSort}
             onOpenJob={(job) => navigate(jobViewPath(job))}
+            statuses={config.data?.status_values ?? []}
+            /*
+             * Resolves false rather than throwing so the cell can put back
+             * what was there. A rename moves the row to a new primary key and
+             * can collide with a job already at it; the server answers 409 and
+             * nothing is written, so showing the new name would be a lie.
+             */
+            onSaveField={async (job, field, value) => {
+              try {
+                await saveField.mutateAsync({ job, field, value });
+                return true;
+              } catch {
+                return false;
+              }
+            }}
           />
         )}
     </main>
