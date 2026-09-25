@@ -1,0 +1,66 @@
+.bar { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-3) var(--sp-3);
+}
+
+.controls select,
+.controls input {
+  font: inherit;
+  font-size: var(--fs-body);
+  padding: var(--sp-2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Takes the slack so the controls beside it keep their natural width, and
+   drops to a full row of its own before it gets too narrow to type in. */
+.search { flex: 1 1 260px; min-width: 200px; }
+
+.chip {
+  font: inherit;
+  font-size: var(--fs-tab);
+  padding: var(--sp-2) var(--sp-3);
+  background: none;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.chip:hover { color: var(--accent); border-color: var(--accent); }
+
+.count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.funnelBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-body);
+}
+.funnelBanner a { color: var(--accent); }
+
+.subtle { color: var(--muted); }
+
+.searchBanner {
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-2);
+  color: var(--muted);
+  font-size: var(--fs-label);
+}
