@@ -1,0 +1,18 @@
+.page {
+  width: min(1180px, calc(100vw - 48px));
+  margin: var(--sp-6) auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.state {
+  width: min(1180px, calc(100vw - 48px));
+  margin: var(--sp-8) auto;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 1000px) {
+  .page { width: calc(100vw - 24px); margin: var(--sp-3) auto; }
+}
