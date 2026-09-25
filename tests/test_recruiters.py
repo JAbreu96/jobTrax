@@ -407,6 +407,47 @@ def test_linkedin_outreach_uses_the_profile_slug(srv):
     assert len(_call(srv.recruiter_roles)) == 2
 
 
+def test_sub_threshold_role_records_recruiter_without_a_job_row(srv):
+    """
+    SKILL.md: "For a sub-60 role, record the recruiter and the message and
+    stop there." Before create_job_row existed, every call created a row
+    regardless of score — this is the guard that actually makes that rule
+    enforceable.
+    """
+    out = _call(srv.record_recruiter_outreach,
+                source="email", identity="newsletter@mycareers.net",
+                company="MyCareers", position_title="weekly newsletter digest",
+                occurred_date="2026-09-23", message_id="msg-1",
+                create_job_row=False)
+    assert "error" not in out
+    assert out["job_row_created"] is False
+    assert "link" not in out
+
+    # The recruiter and the inbound message are still tracked...
+    assert len(_call(srv.list_recruiters)) == 1
+    assert len(srv.jobs_db.get_recruiter_messages()) == 1
+    # ...but no job row and no role-link exist for it.
+    assert _call(srv.recruiter_roles) == []
+
+
+def test_sub_threshold_then_qualifying_role_creates_the_row_on_the_second_call(srv):
+    """A recruiter can pitch a throwaway role first and a real one later —
+    each call's create_job_row is independent, not sticky per recruiter."""
+    _call(srv.record_recruiter_outreach,
+          source="email", identity="dana@agency.com", company="Agency",
+          position_title="junk role", occurred_date="2026-09-20",
+          message_id="msg-1", create_job_row=False)
+    _call(srv.record_recruiter_outreach,
+          source="email", identity="dana@agency.com", company="Agency",
+          position_title="Senior Backend Engineer", occurred_date="2026-09-23",
+          message_id="msg-2", create_job_row=True)
+
+    roles = _call(srv.recruiter_roles, identity="dana@agency.com")
+    assert len(roles) == 1
+    assert roles[0]["position_title"] == "Senior Backend Engineer"
+    assert len(srv.jobs_db.get_recruiter_messages()) == 2  # both messages counted
+
+
 def test_bad_source_is_rejected_not_raised(srv):
     out = _call(srv.record_recruiter_outreach, source="pigeon", identity="x",
                 company="C", position_title="T")

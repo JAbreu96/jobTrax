@@ -371,20 +371,24 @@ same `message_id`:
 | `account` | `primary`, or `alt` for the `{notify_email}` inbox |
 | `message_id`, `thread_id`, `subject` | from `scripts/read_mail.py` |
 | `notes` | the score and rationale, below |
+| `create_job_row` | `true` if the score clears 60, `false` otherwise — see below |
 
-It creates the job row at status `Tracking` with a deterministic synthetic link, so
-**re-processing the same email updates rather than duplicating** — and it never downgrades a
-status that has since moved on.
+When `create_job_row` is true it creates the job row at status `Tracking` with a deterministic
+synthetic link, so **re-processing the same email updates rather than duplicating** — and it
+never downgrades a status that has since moved on. When false, the recruiter and the message
+are still recorded; no row is created or linked.
 
 ### The recruiter is always recorded; the job row is not
 
 Call it for **every** recruiter-sourced role, whatever the score. Who is contacting the user is
 the thing the Recruiters card exists to show, and a cold blast still answers that.
 
-But only let it create a **job row** when the score clears 60 — the same bar the gate uses.
+But only pass `create_job_row=true` when the score clears 60 — the same bar the gate uses.
 InMail arrives at roughly 40 messages per six weeks, nearly all cold, and a row apiece buries
-the tracker in roles nobody is pursuing. For a sub-60 role, record the recruiter and the
-message and stop there.
+the tracker in roles nobody is pursuing. For a sub-60 role, pass `create_job_row=false` — the
+recruiter and the message are recorded and stop there. (Before this parameter existed, every
+call created a row regardless of score — this is the fix that actually makes that rule
+enforceable, not just stated.)
 
 A sub-60 role that later turns real gets its row by hand. That is the same trade the tracker
 already makes everywhere else: it would rather be missing a row you can add than carry forty

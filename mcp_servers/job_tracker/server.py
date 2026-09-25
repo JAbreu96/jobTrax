@@ -523,6 +523,7 @@ def record_recruiter_outreach(
     message_id: str = "",
     thread_id: str = "",
     subject: str = "",
+    create_job_row: bool = True,
 ) -> dict:
     """
     Captures ONE recruiter-sourced role. Call once per role, not once per email.
@@ -535,8 +536,17 @@ def record_recruiter_outreach(
     the profile slug). LinkedIn InMail arrives from a shared relay address, so
     the address cannot identify the recruiter.
 
-    Creates the job row at status 'Tracking' with a deterministic synthetic link,
-    so re-processing the same email updates rather than duplicates. Idempotent.
+    The recruiter and the inbound message are always recorded. `create_job_row`
+    (default True) additionally creates/updates the job row at status
+    'Tracking' with a deterministic synthetic link, so re-processing the same
+    email updates rather than duplicates. Idempotent.
+
+    Pass `create_job_row=False` for a role that scored below the triage skill's
+    task-worthy bar — SKILL.md's own rule is "record the recruiter and the
+    message and stop there" for those, precisely to avoid a job row for every
+    cold pitch and false-positive newsletter/content email that scores as
+    `recruiter_outreach`. Before this parameter existed, every call created a
+    row regardless of score, which this rule could never actually honor.
     """
     if source not in jobs_db.RECRUITER_SOURCES:
         return {"error": f"source must be one of: {', '.join(jobs_db.RECRUITER_SOURCES)}"}
@@ -554,36 +564,40 @@ def record_recruiter_outreach(
         email=email, seen_date=when,
     )
 
-    # Keyed on the synthetic link, so a re-processed email finds the row it
-    # created last time and keeps its original date_added and status.
-    existing = jobs_db.find_job_by_link(link)
-    jobs_db.upsert_job({
-        "company": company.strip(),
-        "position_title": title,
-        "job_summary": "",
-        "location": "",
-        "link": link,
-        "date_added": (existing or {}).get("date_added") or when,
-        "contacts": f"{name} — {email}".strip(" —") if (name or email) else "",
-        "notes": notes,
-        "outreach_date": "",
-        "date_applied": "",
-        "status": (existing or {}).get("status") or "Tracking",
-        "followup_log": "",
-    })
-    jobs_db.link_recruiter_job(
-        recruiter_id, company=company.strip(),
-        date_added=(existing or {}).get("date_added") or when,
-        position_title=title, link=link, sourced_date=when,
-        account=account, message_id=message_id,
-    )
+    if create_job_row:
+        # Keyed on the synthetic link, so a re-processed email finds the row
+        # it created last time and keeps its original date_added and status.
+        existing = jobs_db.find_job_by_link(link)
+        jobs_db.upsert_job({
+            "company": company.strip(),
+            "position_title": title,
+            "job_summary": "",
+            "location": "",
+            "link": link,
+            "date_added": (existing or {}).get("date_added") or when,
+            "contacts": f"{name} — {email}".strip(" —") if (name or email) else "",
+            "notes": notes,
+            "outreach_date": "",
+            "date_applied": "",
+            "status": (existing or {}).get("status") or "Tracking",
+            "followup_log": "",
+        })
+        jobs_db.link_recruiter_job(
+            recruiter_id, company=company.strip(),
+            date_added=(existing or {}).get("date_added") or when,
+            position_title=title, link=link, sourced_date=when,
+            account=account, message_id=message_id,
+        )
     if message_id:
         jobs_db.record_recruiter_message(
             recruiter_id, "inbound", when, subject=subject,
             account=account, message_id=message_id, thread_id=thread_id,
         )
-    return {"recruiter_id": recruiter_id, "company": company.strip(),
-            "position_title": title, "link": link}
+    result = {"recruiter_id": recruiter_id, "company": company.strip(),
+              "position_title": title, "job_row_created": create_job_row}
+    if create_job_row:
+        result["link"] = link
+    return result
 
 
 @mcp.tool()
