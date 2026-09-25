@@ -1,0 +1,5 @@
+.editable {
+  cursor: text;
+  min-height: 16px;
+  outline: none;
+}

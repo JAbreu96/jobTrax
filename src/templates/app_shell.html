@@ -16,13 +16,32 @@
        through Vite, so it is not fingerprinted and continues to be shared
        as-is with the existing Jinja templates. -->
   <link rel="stylesheet" href="{{ url_for('static', filename='job_views.css') }}">
-  <!-- No dist/assets/main.css yet -- Phase 0's App.tsx imports no CSS, so
-       Vite emits none. Add this link back (assets/main.[extname] is already
-       pinned in vite.config.ts) once a later phase's React code imports a
-       stylesheet. -->
+  {% if bundle_css %}
+  <!-- Linked only when the build actually emitted it: Vite emits no
+       stylesheet until something in the entry graph imports CSS. See
+       app_shell() in src/jobs_gui.py for why this is a filesystem check
+       rather than a fixed yes or no. -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='dist/assets/main.css') }}">
+  {% endif %}
 </head>
 <body>
+  {% if bundle_built %}
   <div id="root"></div>
   <script type="module" src="{{ url_for('static', filename='dist/assets/main.js') }}"></script>
+  {% else %}
+  <!-- src/static/dist/ is gitignored, so a fresh clone has no bundle and the
+       script tag above would 404 into a blank page. Say so in the page
+       instead -- otherwise the reason is visible only in devtools. -->
+  <main style="max-width: 34rem; margin: 4rem auto; padding: 0 1.5rem;
+               font: 14px/1.6 system-ui, sans-serif;">
+    <h1 style="font-size: 1.25rem;">The frontend bundle hasn't been built yet</h1>
+    <p><code>src/static/dist/</code> is gitignored, so it is absent on a fresh
+       clone. Build it once, then reload this page:</p>
+    <pre style="background: #f4f4f5; padding: 0.75rem 1rem; border-radius: 6px;
+                overflow-x: auto;"><code>./scripts/build-frontend.sh</code></pre>
+    <p>The Jinja views at <a href="/">/</a>, <a href="/kanban">/kanban</a> and
+       <a href="/insights">/insights</a> need no build and are unaffected.</p>
+  </main>
+  {% endif %}
 </body>
 </html>

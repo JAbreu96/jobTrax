@@ -172,6 +172,31 @@ JSON API you can build on:
 
 Setting a job to **Applied** stamps `date_applied` for you.
 
+### The React view at `/app`
+
+A fourth page, `/app`, is the in-progress React rewrite of the job view. The
+three Jinja pages above need no build step and are unaffected by any of this.
+
+`/app` does, because `src/static/dist/` is gitignored and so is absent on a
+fresh clone:
+
+```bash
+./scripts/build-frontend.sh    # installs deps on first run, then builds
+```
+
+Re-run it after any change under `frontend/`; nothing watches. Visiting `/app`
+before the first build shows a page saying exactly that, rather than a blank
+screen. Node 20.19+ is required (Vite 7's floor) and `.nvmrc` pins the version
+the script selects — worth knowing, because several `scripts/run-*.sh` launchd
+wrappers pin `PATH` to Node 18, which is too old to build with.
+
+`pytest` runs the frontend's `tsc` and Vitest suites too, skipping both when
+the toolchain or `node_modules` is missing. For the frontend alone:
+
+```bash
+cd frontend && npm test && npm run typecheck
+```
+
 ---
 
 ## MCP servers
