@@ -468,9 +468,11 @@ let prefetching = false;
 
 async function loadJobs() {
   // Arriving from the Insights funnel means matching the population it counted,
-  // archived rows included; otherwise this stays the working table.
-  const fromFunnel = new URLSearchParams(window.location.search).has('stage');
-  const base = '/api/jobs?' + (fromFunnel ? 'include_archived=1&' : '');
+  // archived rows included; a ?q= deeplink says so with include_archived=1,
+  // because the silence and coverage tables it links from are not filtered on
+  // archived and would otherwise point at rows this list refuses to show.
+  const wantArchived = JobFields.wantsArchived(window.location.search);
+  const base = '/api/jobs?' + (wantArchived ? 'include_archived=1&' : '');
   const token = ++loadToken;
   listIncomplete = false;
 
@@ -779,6 +781,11 @@ const FUNNEL_FILTER = (() => {
 })();
 let funnelInterviewedKeys = null;   // filled in only when the stage needs it
 
+// Filled before the first render, so a deeplink never paints the whole table
+// and then narrows it.
+document.getElementById('search').value =
+  JobFields.searchFromQuery(window.location.search);
+
 function isAutoApplied(j) {
   const n = (j.notes || '').toLowerCase();
   return n.includes('applypass') || n.includes('auto-appl');
@@ -824,6 +831,40 @@ function showFunnelBanner() {
   bar.appendChild(clear);
   document.querySelector('main, body').prepend(bar);
 }
+
+function showSearchBanner() {
+  // The funnel banner already owns the bar when both params are present, and
+  // two stacked banners would say the same thing twice.
+  if (FUNNEL_FILTER) return;
+  // Re-derives from the URL and rebuilds every call, rather than caching
+  // the term from the first load: a banner that only ever reflected the
+  // arrival query would keep reading "Searching for Sciforium" after the
+  // box was retyped to "Acme", contradicting the table directly beneath it.
+  // The wording itself is JobFields.searchBannerText() -- pure, and where
+  // tests/js/job_fields_checks.js can reach it -- this only decides whether
+  // the bar exists at all.
+  const existing = document.querySelector('.funnel-banner');
+  const text = JobFields.searchBannerText(JobFields.searchFromQuery(window.location.search));
+  if (!text) { if (existing) existing.remove(); return; }
+  if (existing) existing.remove();
+  const bar = document.createElement('div');
+  bar.className = 'funnel-banner';
+  const txt = document.createElement('span');
+  txt.textContent = text;
+  if (JobFields.wantsArchived(window.location.search)) {
+    const note = document.createElement('span');
+    note.className = 'muted-inline';
+    note.textContent = ' · archived included';
+    txt.appendChild(note);
+  }
+  const clear = document.createElement('a');
+  clear.href = '/';
+  clear.textContent = 'clear';
+  bar.appendChild(txt);
+  bar.appendChild(clear);
+  document.querySelector('main, body').prepend(bar);
+}
+showSearchBanner();
 
 async function hydrateFunnelFilter() {
   showFunnelBanner();
@@ -1030,7 +1071,18 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-document.getElementById('search').addEventListener('input', renderFromTop);
+document.getElementById('search').addEventListener('input', (e) => {
+  // The URL trails the box rather than driving it: replaceState so a typed
+  // query is one history entry, not one per keystroke, and pathname so a
+  // cleared search lands on / rather than on a bare '?'.
+  history.replaceState(null, '',
+    location.pathname + JobFields.queryWithSearch(location.search, e.target.value));
+  // Reads location.search fresh, which replaceState above just updated --
+  // otherwise the banner keeps naming the query the page arrived with while
+  // the table below it has already moved on.
+  showSearchBanner();
+  renderFromTop();
+});
 function paintSortHeaders() {
   const state = { asc: 'ascending', desc: 'descending' };
   document.querySelectorAll('.sort-header').forEach(btn => {
