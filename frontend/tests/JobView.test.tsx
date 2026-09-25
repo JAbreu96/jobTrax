@@ -51,6 +51,10 @@ function renderView(props: Partial<React.ComponentProps<typeof JobView>> = {}) {
       onAddInterview={vi.fn().mockResolvedValue({})}
       onDeleteInterview={vi.fn().mockResolvedValue({})}
       onSaveCompanySection={onSaveCompanySection}
+      onAddPrepItem={vi.fn().mockResolvedValue({})}
+      onSetPrepDone={vi.fn().mockResolvedValue({})}
+      onEditPrepItem={vi.fn().mockResolvedValue({})}
+      onDeletePrepItem={vi.fn().mockResolvedValue({})}
       onDelete={onDelete}
       {...props}
     />,

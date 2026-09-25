@@ -88,6 +88,7 @@ export interface JobsPage {
 // GET /api/jobs/detail. job_summary is present unless the caller passed
 // ?summary=0 (the client already has it cached), so it's optional here.
 export interface JobDetail {
+  prep_items?: PrepItem[];
   interviews: Interview[];
   job_summary?: string;
   // Only when the caller asks for it (?job=1). The table never does -- it is
@@ -315,4 +316,27 @@ export interface CompanyProfile extends Record<CompanySection, string> {
 export interface CompanyProfileResponse {
   company: string;
   profile: CompanyProfile | null;
+}
+
+// ---------------------------------------------------------------------------
+// Interview prep
+// ---------------------------------------------------------------------------
+
+// One table for both, because a task and a question have the same shape and the
+// same lifecycle -- and `done` on a question means "asked", which is the state
+// you actually need mid-loop.
+export type PrepKind = "task" | "question";
+
+export interface PrepItem {
+  id: number;
+  company: string;
+  date_added: string;
+  position_title: string;
+  link: string;
+  kind: PrepKind;
+  body: string;
+  done: number;
+  sort_order: number;
+  source: string;
+  created_at: string;
 }
