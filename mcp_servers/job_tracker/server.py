@@ -583,6 +583,98 @@ def record_recruiter_reply(identity: str, source: str = "email",
     return {"recruiter_id": recruiter_id, "recorded": when}
 
 
+# --- Interview prep ----------------------------------------------------------
+# Job-level, so unlike the company tools these do have to disambiguate: 174
+# companies here hold more than one role, and a prep plan for a robotics screen
+# is not a prep plan for the fullstack one.
+
+def _resolve_job(company: str, position_title: str = "", link: str = "") -> dict:
+    """The narrowing every job-level tool here does, in one place."""
+    if position_title or link:
+        matches = _narrow(_match_company(jobs_db.get_all_jobs(), company),
+                          position_title, link)
+        if not matches:
+            raise ValueError(
+                f"No job found for company '{company}' matching title "
+                f"'{position_title}' / link '{link}'."
+            )
+        if len(matches) > 1:
+            titles = ", ".join(r["position_title"] for r in matches)
+            raise ValueError(
+                f"Ambiguous — {len(matches)} roles at '{company}' match: {titles}. "
+                "Pass an exact link."
+            )
+        return matches[0]
+    return _find_one_match(company)
+
+
+@mcp.tool()
+def get_prep_plan(company: str, position_title: str = "", link: str = "") -> dict:
+    """
+    Read the prep checklist and the questions stored for one job.
+
+    Check this before writing a plan -- items already there were either written
+    by the candidate or ticked off, and appending duplicates of them is worse
+    than adding nothing.
+    - company: case-insensitive match
+    - position_title / link: required when the company has more than one role
+    """
+    row = _resolve_job(company, position_title, link)
+    items = jobs_db.get_prep_items(row["company"], row["date_added"],
+                                   row["position_title"], row["link"])
+    return {
+        "company": row["company"], "position_title": row["position_title"],
+        "tasks": [{"id": i["id"], "body": i["body"], "done": bool(i["done"])}
+                  for i in items if i["kind"] == "task"],
+        "questions": [{"id": i["id"], "body": i["body"], "done": bool(i["done"])}
+                      for i in items if i["kind"] == "question"],
+    }
+
+
+@mcp.tool()
+def add_prep_plan(company: str, tasks: list[str] = [], questions: list[str] = [],
+                  position_title: str = "", link: str = "") -> dict:
+    """
+    Append prep tasks and questions to ask, for one job.
+
+    Appends; never replaces. The candidate ticks items off and writes their own,
+    and a replacing write would throw that away -- so read get_prep_plan first
+    and add only what is missing.
+
+    Write things that need doing before this specific round at this specific
+    company, not generic interview advice. A question is one you would actually
+    ask them, phrased to be said out loud.
+
+    - company: case-insensitive match
+    - tasks: things to do before the interview
+    - questions: things to ask them during it
+    - position_title / link: required when the company has more than one role
+    """
+    row = _resolve_job(company, position_title, link)
+    written = {"tasks": 0, "questions": 0}
+    refused = []
+
+    for kind, bodies, label in (("task", tasks, "tasks"),
+                                ("question", questions, "questions")):
+        for body in bodies or []:
+            item_id = jobs_db.add_prep_item(
+                row["company"], row["date_added"], row["position_title"],
+                row["link"], kind, body, source="claude")
+            if item_id is None:
+                refused.append(body)
+            else:
+                written[label] += 1
+
+    if not written["tasks"] and not written["questions"]:
+        return {"success": False,
+                "error": "Nothing was written — pass at least one non-empty task or question."}
+    result = {"success": True, "company": row["company"],
+              "position_title": row["position_title"], "added": written}
+    if refused:
+        result["refused_as_blank"] = refused
+    return result
+
+
 # --- Company research --------------------------------------------------------
 # These two are the only tools here that do NOT go through _find_one_match, and
 # that is the point. A company profile is keyed on the employer, so the

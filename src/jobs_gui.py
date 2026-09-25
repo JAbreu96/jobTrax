@@ -37,6 +37,13 @@ from src.jobs_db import (  # noqa: E402
     RATE_MIN_DENOMINATOR,
     add_interview,
     COMPANY_SECTIONS,
+    PREP_KINDS,
+    get_prep_items,
+    add_prep_item,
+    set_prep_item_done,
+    update_prep_item,
+    delete_prep_item,
+    carry_prep_items,
     get_company_profile,
     set_company_profile,
     rename_company_profile,
@@ -385,6 +392,11 @@ def api_job_detail():
             (key["company"], key["date_added"], key["position_title"], key["link"]),
         ).fetchone()
         payload["job"] = _with_recruiter(dict(row)) if row else None
+
+    # Same opt-in shape as ?job=1 above, and for the same reason: the table's
+    # expand has no prep checklist to show and should not pay for one.
+    if request.args.get("prep") in ("1", "true", "yes"):
+        payload["prep_items"] = get_prep_items(**key)
     return jsonify(payload)
 
 
@@ -557,6 +569,10 @@ def api_update_job():
         result["date_applied"] = date_applied_value
     if field == "company" and value != company:
         result["company_profile_moved"] = _carry_company_profile(company, value, db)
+        # Unconditional, unlike the profile: prep rows belong to this posting
+        # alone, so there is no sibling role they could be stranded from.
+        result["prep_items_moved"] = carry_prep_items(
+            company, value, date_added, position_title or "", row_link or "")
     return jsonify(result)
 
 
@@ -585,6 +601,69 @@ def _carry_company_profile(old_company: str, new_company: str, db) -> bool:
         return rename_company_profile(old_company, new_company)
     except Exception:
         return False
+
+
+# --- Interview prep ----------------------------------------------------------
+# Tasks and questions for one job. Reads ride along on /api/jobs/detail?prep=1;
+# these three are the writes.
+
+@app.route("/api/prep/add", methods=["POST"])
+def api_add_prep_item():
+    payload = request.get_json(force=True)
+    key = {
+        "company": (payload.get("company") or "").strip(),
+        "date_added": (payload.get("date_added") or "").strip(),
+        "position_title": (payload.get("position_title") or "").strip(),
+        "link": (payload.get("link") or "").strip(),
+    }
+    kind = payload.get("kind")
+    body = (payload.get("body") or "").strip()
+
+    if not key["company"]:
+        return jsonify({"error": "company is required"}), 400
+    if kind not in PREP_KINDS:
+        return jsonify({"error": f"kind must be one of {', '.join(PREP_KINDS)}"}), 400
+    if not body:
+        return jsonify({"error": "body cannot be blank"}), 400
+
+    item_id = add_prep_item(**key, kind=kind, body=body)
+    if item_id is None:
+        return jsonify({"error": "could not add the item"}), 500
+    return jsonify({"ok": True, "id": item_id})
+
+
+@app.route("/api/prep/update", methods=["POST"])
+def api_update_prep_item():
+    payload = request.get_json(force=True)
+    item_id = payload.get("id")
+    if not isinstance(item_id, int):
+        return jsonify({"error": "id is required"}), 400
+
+    # Exactly one of the two, so a caller cannot half-tick and half-rewrite an
+    # item in a single request and then have to guess which half applied.
+    if "done" in payload:
+        ok = set_prep_item_done(item_id, bool(payload["done"]))
+    elif "body" in payload:
+        ok = update_prep_item(item_id, payload.get("body") or "")
+        if not ok:
+            return jsonify({"error": "body cannot be blank"}), 400
+    else:
+        return jsonify({"error": "pass either done or body"}), 400
+
+    if not ok:
+        return jsonify({"error": "Item not found."}), 404
+    return jsonify({"ok": True})
+
+
+@app.route("/api/prep/delete", methods=["POST"])
+def api_delete_prep_item():
+    payload = request.get_json(force=True)
+    item_id = payload.get("id")
+    if not isinstance(item_id, int):
+        return jsonify({"error": "id is required"}), 400
+    if not delete_prep_item(item_id):
+        return jsonify({"error": "Item not found."}), 404
+    return jsonify({"ok": True})
 
 
 # --- Company research --------------------------------------------------------
