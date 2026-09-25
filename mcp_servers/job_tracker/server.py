@@ -583,5 +583,77 @@ def record_recruiter_reply(identity: str, source: str = "email",
     return {"recruiter_id": recruiter_id, "recorded": when}
 
 
+# --- Company research --------------------------------------------------------
+# These two are the only tools here that do NOT go through _find_one_match, and
+# that is the point. A company profile is keyed on the employer, so the
+# ambiguity that forces every job-level tool to disambiguate -- 174 companies in
+# this tracker hold more than one role -- simply does not arise: all of them
+# share the one profile, which is the reason it is stored this way.
+
+@mcp.tool()
+def get_company_profile(company: str) -> dict:
+    """
+    Read the stored research notebook for a company.
+
+    Returns the sections written so far plus `researched_at`, the date research
+    was last refreshed -- check it before re-researching, and prefer updating
+    the stale sections over rewriting all of them.
+    - company: employer name; matched case-insensitively, whitespace collapsed
+    """
+    profile = jobs_db.get_company_profile(company)
+    if not profile:
+        return {"company": company, "profile": None,
+                "note": "No research stored for this company yet."}
+    return {"company": company, "profile": profile}
+
+
+@mcp.tool()
+def set_company_profile(
+    company: str,
+    about: str = "",
+    product: str = "",
+    team: str = "",
+    funding: str = "",
+    recent_news: str = "",
+    why_me: str = "",
+    website: str = "",
+) -> dict:
+    """
+    Write research about a company. Only the sections you pass are changed.
+
+    Partial writes are intended: fill `about` and `product` in one pass and
+    `recent_news` later without clobbering either. Every section is Markdown
+    prose a human will read before an interview -- write what is actually known
+    and leave a section out rather than filling it with hedging.
+
+    - company: employer name, exactly as it appears on the job rows if possible
+    - about: what the company is, its stage, its market
+    - product: what they actually build, and how it works
+    - team: the people -- founders, the hiring team, anyone named in the process
+    - funding: rounds, investors, amounts, dates
+    - recent_news: launches, raises, press, anything from the last few months
+    - why_me: the honest case for this candidate at this company
+    - website: canonical URL
+
+    An empty string leaves a section alone rather than clearing it -- there is
+    no way to blank a section from here, on purpose, since every caller is a
+    model that might omit a field it simply did not research. Clear one by hand
+    in the GUI.
+    """
+    sections = {k: v for k, v in {
+        "about": about, "product": product, "team": team, "funding": funding,
+        "recent_news": recent_news, "why_me": why_me, "website": website,
+    }.items() if v}
+    if not sections:
+        return {"success": False,
+                "error": "Pass at least one section to write."}
+
+    profile = jobs_db.set_company_profile(company, **sections)
+    if profile is None:
+        return {"success": False, "error": "Could not write the company profile."}
+    return {"success": True, "company": company,
+            "written": sorted(sections), "profile": profile}
+
+
 if __name__ == "__main__":
     mcp.run()
