@@ -11,17 +11,17 @@ if (!rootEl) {
   throw new Error("#root element not found");
 }
 
-// basename="/app" is a Phase 0 staging trap: none of "/", "/kanban" or
-// "/insights" are handed to React yet -- those Flask routes still serve the
-// existing Jinja templates. This whole app is mounted under the throwaway
-// /app route instead (see app_shell() in src/jobs_gui.py) so it doesn't
-// collide with them. This is temporary: as each real view is cut over in
-// Phases 4, 5 and 7, its route moves off /app and onto its real path, and
-// once all three are cut over this basename goes away entirely.
+// No basename: the app is served from "/" now, not from the /app staging
+// mount. app_shell() in src/jobs_gui.py answers /app with a redirect so the
+// links written during the rewrite keep working.
+//
+// /kanban and /insights are still Flask's. React must not route them -- it
+// only ever sees a path Flask handed it, and Flask has no route for those, so
+// a link to one has to be a plain <a> that leaves the app (see AppHeader).
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename="/app">
+      <BrowserRouter>
         <App />
       </BrowserRouter>
     </QueryClientProvider>

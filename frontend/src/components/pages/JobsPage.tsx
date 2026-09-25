@@ -1,8 +1,8 @@
 /*
  * The jobs list page. Fetches; JobFilterBar and JobsTable render.
  *
- * Mounted at /app for now, not at "/" -- the Jinja table still owns that, and
- * this is still read-only. It takes over "/" in rung 4, once it can edit.
+ * Mounted at "/" as of this rung. It replaced src/templates/jobs.html, which
+ * is deleted -- this is the daily list now, not a staging copy of it.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";

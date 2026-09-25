@@ -495,25 +495,50 @@ def test_api_config_exposes_the_shared_vocabulary(client):
     assert body["interview_types"] == jobs_db.INTERVIEW_TYPES
 
 
-def test_app_shell_serves_every_client_routed_path(client):
-    """
-    The React app mounts under /app with a matching router basename, and both
-    the bare route and the <path:_rest> catch-all are needed: without the
-    latter a hard refresh on /app/kanban 404s at Flask before React ever runs.
+def _is_app_shell(html):
+    """Whether a response is app_shell.html, built or not.
 
-    Asserting the bundle reference rather than just a 200, because the failure
-    this guards is a shell that renders an empty page -- which is a 200.
+    Looking for the bundle reference alone would make the assertion a property
+    of the machine: src/static/dist/ is gitignored, so on a clone that has
+    never run the build the shell renders its "build this first" page instead
+    -- still the shell, no script tag. Either branch counts; a Jinja view is
+    neither.
     """
-    for path in ("/app", "/app/kanban", "/app/insights"):
+    return 'id="root"' in html or "build-frontend.sh" in html
+
+
+def test_react_serves_every_path_it_routes(client):
+    """
+    Each client-routed path needs its own Flask route. Without one, a hard
+    refresh or a pasted link 404s at Flask before React ever runs -- and /job
+    is exactly the URL that gets pasted, since the job key rides in its query
+    string.
+    """
+    for path in ("/", "/job", "/job?company=Acme"):
         resp = client.get(path)
         assert resp.status_code == 200, path
-        assert "dist/assets/main.js" in resp.get_data(as_text=True), path
+        assert _is_app_shell(resp.get_data(as_text=True)), path
 
 
-def test_app_shell_has_not_taken_over_the_jinja_views(client):
-    """Phase 0 is purely additive: /, /kanban and /insights still render Jinja."""
-    for path in ("/", "/kanban", "/insights"):
-        assert "dist/assets/main.js" not in client.get(path).get_data(as_text=True), path
+def test_the_board_and_insights_are_still_jinja(client):
+    """
+    React must not claim these. They have no route in App.tsx and no shell
+    here; Phases 5 and 7 move them, one at a time.
+    """
+    for path in ("/kanban", "/insights"):
+        html = client.get(path).get_data(as_text=True)
+        assert not _is_app_shell(html), path
+
+
+def test_the_old_app_mount_redirects_instead_of_dying(client):
+    """
+    /app was the staging mount, and links to it exist in PR bodies and browser
+    histories. The query string has to survive: /app/job?company=... is how the
+    job view is deep-linked, and losing it lands on the list with no job open,
+    which reads as the view having lost the row.
+    """
+    assert client.get("/app").headers["Location"] == "/"
+    assert client.get("/app/job?company=Acme").headers["Location"] == "/job?company=Acme"
 
 
 # --- /api/jobs/detail?job=1 -------------------------------------------------

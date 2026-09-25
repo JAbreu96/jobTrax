@@ -149,12 +149,6 @@ def _compress(response):
     return response
 
 
-@app.route("/")
-def index():
-    return render_template("jobs.html", status_values=STATUS_VALUES,
-                           interview_types=INTERVIEW_TYPES)
-
-
 @app.route("/kanban")
 def kanban():
     # interview_types is new here: the board's modal can log rounds now, which
@@ -167,8 +161,9 @@ def _bundle_asset_exists(name: str) -> bool:
     """Whether `npm run build` has emitted src/static/dist/assets/<name>.
 
     src/static/dist/ is gitignored, so on a fresh clone it is simply absent
-    and /app would otherwise serve a <script> tag pointing at a 404 -- a blank
-    page with the reason only visible in devtools. Checked per request rather
+    and the shell would otherwise serve a <script> tag pointing at a 404 -- a
+    blank page with the reason only visible in devtools. Checked per request
+    rather
     than cached at import: the dev loop is "edit, rebuild, refresh", and a
     cached miss would survive the rebuild and keep claiming the bundle is
     missing until Flask restarted.
@@ -176,29 +171,38 @@ def _bundle_asset_exists(name: str) -> bool:
     return os.path.isfile(os.path.join(app.static_folder, "dist", "assets", name))
 
 
-# Staging mount for the React rewrite (frontend/). Phase 0 only -- it does not
-# replace "/", "/kanban" or "/insights" yet, which still serve the Jinja
-# templates above. Both routes are needed so a hard refresh on a client-routed
-# path under /app (e.g. /app/kanban) doesn't 404 at Flask. This whole mount,
-# and the matching `basename="/app"` on the React router, is temporary and is
-# expected to be removed route-by-route in Phases 4, 5 and 7 as each view is
-# cut over for real; once all three are cut over, basename goes away entirely.
-@app.route("/app")
-@app.route("/app/<path:_rest>")
-def app_shell(_rest=None):
+# The React app now serves the job list for real. Every path React routes
+# needs its own Flask route: a hard refresh on /job has to reach the shell
+# rather than 404 at Flask before React ever runs. /kanban and /insights are
+# deliberately absent -- they still render the Jinja templates above, and
+# Phases 5 and 7 move them here one at a time.
+@app.route("/")
+@app.route("/job")
+def app_shell():
     return render_template(
         "app_shell.html",
         bundle_built=_bundle_asset_exists("main.js"),
-        # Vite emits a stylesheet only once something in the entry graph
-        # imports CSS. Phase 0's App.tsx imported none, and the field
-        # components landed on this rung are not mounted yet, so main.css
-        # genuinely does not exist here -- linking it unconditionally would
-        # serve a 404 on every load. Asking the filesystem rather than
-        # hard-coding either answer means the link appears on its own the
-        # moment a later phase renders a component that imports a module, so
-        # nobody has to remember to come back and add it.
+        # A build emits main.css now -- the mounted components import CSS
+        # modules -- but this stays a filesystem check for the same reason the
+        # script tag is one: on an unbuilt clone neither file exists, and a
+        # <link> at a missing stylesheet is a 404 on every load.
         bundle_css=_bundle_asset_exists("main.css"),
     )
+
+
+# /app was the staging mount while the Jinja table still owned "/". It is kept
+# as a redirect rather than deleted: it is what every link written during the
+# rewrite points at, including ones sitting in this repo's PR bodies and in
+# the browser history of the person using it. The query string rides along --
+# /app/job?company=... is exactly the shape the job view is deep-linked with,
+# and dropping it would land on the list with no job selected, which looks
+# like the view losing data rather than a link being rewritten.
+@app.route("/app")
+@app.route("/app/<path:rest>")
+def app_legacy_mount(rest=""):
+    target = "/" + rest
+    query = request.query_string.decode()
+    return redirect(f"{target}?{query}" if query else target)
 
 
 # The list is ordered by date_added DESC, and date_added is not unique, so a

@@ -4,46 +4,55 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "../src/App";
 
-function renderAt(path: string, basename?: string) {
+function renderAt(path: string) {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]} basename={basename}>
+      <MemoryRouter initialEntries={[path]}>
         <App />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-// Proves the Vite + Vitest + React Testing Library + jsdom wiring works.
-// Phases 1-3 depend on this scaffold being sound before they add real tests.
 describe("App", () => {
-  it("renders the real jobs list at /, not a placeholder", () => {
-    // The first route to stop being a placeholder. It fetches, so with no
-    // stubbed fetch it lands on its loading state -- which is enough to prove
-    // the route resolves to JobsPage rather than to nothing.
+  it("serves the jobs list at /", () => {
+    // It fetches, so with no stubbed fetch it lands on its loading state --
+    // enough to prove the route resolves to JobsPage rather than to nothing.
     renderAt("/");
     expect(screen.getByText(/loading jobs/i)).toBeInTheDocument();
-    expect(screen.queryByText(/jobs table — not yet ported/i)).toBeNull();
   });
 
-  it("routes to each placeholder", () => {
+  it("serves the job view at /job", () => {
+    renderAt("/job?company=Acme");
+    expect(screen.queryByText(/loading jobs/i)).toBeNull();
+  });
+
+  /*
+   * The basename is gone: the app is served from "/" now, not from the /app
+   * staging mount (see main.tsx). What replaces the old basename trap is the
+   * reverse hazard -- React routing a path Flask still owns.
+   *
+   * /kanban and /insights are Flask routes rendering Jinja. React never
+   * receives them on a page load: the browser asks the server and the server
+   * answers with a different page. A route here for either would fire only on
+   * a client-side navigation to it, which is exactly the bug -- a blank panel
+   * under a URL that renders fine on reload.
+   */
+  it("routes neither the board nor the insights view", () => {
     renderAt("/kanban");
-    expect(screen.getByText(/kanban board — not yet ported/i)).toBeInTheDocument();
-  });
-
-  // The Phase 0 trap. The app is mounted under Flask's throwaway /app route
-  // with a matching basename (see main.tsx), so the router must strip that
-  // prefix before matching. Get the basename wrong and every route falls
-  // through to nothing -- a blank page, not an error, which is exactly the
-  // failure that reads as "the build is broken" when the build is fine.
-  it("matches routes under the /app basename the staging mount serves", () => {
-    renderAt("/app/insights", "/app");
-    expect(screen.getByText(/insights — not yet ported/i)).toBeInTheDocument();
-  });
-
-  it("renders nothing when the basename does not match the path", () => {
-    renderAt("/app/insights");
+    expect(screen.queryByText(/loading jobs/i)).toBeNull();
     expect(screen.queryByText(/not yet ported/i)).toBeNull();
+  });
+
+  it("keeps the view switcher on every page it does route", () => {
+    // Without it the list is a page with no way off it: the board and the
+    // insights view stay reachable only by typing their URLs.
+    renderAt("/");
+    expect(screen.getByRole("link", { name: "Kanban" })).toBeInTheDocument();
+
+    renderAt("/job?company=Acme");
+    expect(screen.getAllByRole("link", { name: "Insights" }).length)
+      .toBeGreaterThan(0);
   });
 });
