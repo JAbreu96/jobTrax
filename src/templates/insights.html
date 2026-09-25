@@ -1,3 +1,20 @@
+{#
+  A company named anywhere on this page opens the job list filtered to it.
+
+  The company only, never company + role: the list matches one substring
+  against company/title/notes/location joined together, so a two-field query
+  matches nothing. include_archived rides along because these tables are not
+  filtered on archived -- unlinked_recruiter_rows has no archived clause, and an
+  interview round can outlive its job row -- and a link into a table that
+  refuses to show the row would read as "no such job".
+
+  The cell is linked rather than the row: the duplicate-rounds and recruiter
+  rows already own buttons, and a row handler would have to fight them.
+#}
+{% macro company_link(company, text=None) -%}
+<a class="q-link" href="/?q={{ company | urlencode }}&amp;include_archived=1"
+   title="Open {{ company }} in the job list">{{ text or company }}</a>
+{%- endmacro %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -101,6 +118,13 @@
   .tile a { color: inherit; text-decoration: none; }
   .tile a:hover { text-decoration: underline; }
 
+  /* Matches .tile a: a link in a table inherits its colour rather than going
+     accent-blue, which is reserved for active nav. The dotted rule is what
+     makes it discoverable without hovering every cell. */
+  .q-link { color: inherit; text-decoration: none;
+            border-bottom: 1px dotted var(--muted); }
+  .q-link:hover { text-decoration: underline; border-bottom-color: transparent; }
+
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
   th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; }
@@ -162,7 +186,7 @@
       <tbody>
         {% for u in soon %}
           <tr>
-            <td>{{ u.company }}</td>
+            <td>{{ company_link(u.company) }}</td>
             <td>{{ u.position_title }}</td>
             <td>{{ (u.type_label or u.interview_type).replace("_", " ") }}</td>
             <td>{{ u.scheduled_date }}</td>
@@ -197,7 +221,7 @@
     <p class="muted" style="font-size:13px;margin:8px 0 0;">
       <span class="rate bad">{{ missing_rounds | length }}</span>
       at Phone Screen or later with no round recorded —
-      {{ missing_rounds[:3] | map(attribute="company") | join(", ") }}{% if missing_rounds | length > 3 %},
+      {% for m in missing_rounds[:3] %}{{ company_link(m.company) }}{% if not loop.last %}, {% endif %}{% endfor %}{% if missing_rounds | length > 3 %},
       and {{ (missing_rounds | length) - 3 }} more{% endif %}.
       A booking that lives only in a row's notes cannot appear above.
     </p>
@@ -214,7 +238,7 @@
       <tbody>
       {% for g in duplicate_rounds %}
         <tr data-dup-id="{{ g.rounds[-1].id }}">
-          <td>{{ g.company }}</td>
+          <td>{{ company_link(g.company) }}</td>
           <td>{{ g.position_title }}</td>
           <td>{{ g.interview_type | replace("_", " ") }}</td>
           <td>{{ g.scheduled_date }}</td>
@@ -432,7 +456,7 @@
       <tbody>
         {% for r in silence.ghosted_rows %}
           <tr>
-            <td>{{ r.company }}</td><td>{{ r.position_title }}</td>
+            <td>{{ company_link(r.company) }}</td><td>{{ r.position_title }}</td>
             <td>{{ r.status or "—" }}</td>
             <td>{{ r.signal.replace("_", " ") }}</td>
             <td class="num">{{ r.idle_days }}d</td>
@@ -452,7 +476,7 @@
       <tbody>
         {% for r in silence.no_response_rows[:10] %}
           <tr>
-            <td>{{ r.company }}{% if r.auto_applied %} <span class="muted">(auto)</span>{% endif %}</td>
+            <td>{{ company_link(r.company) }}{% if r.auto_applied %} <span class="muted">(auto)</span>{% endif %}</td>
             <td>{{ r.position_title }}</td>
             <td>{{ r.since }}</td>
             <td class="num">{{ r.idle_days }}d</td>
@@ -524,7 +548,7 @@
           </tr>
           {% for role in recruiter_roles if role.recruiter_identity == r.identity %}
             <tr class="sub-row">
-              <td colspan="3">{{ role.position_title }}</td>
+              <td colspan="3">{{ company_link(role.company, role.position_title) }}</td>
               <td colspan="2">
                 {% if role.job_status %}{{ role.job_status }}
                 {% else %}<span class="muted">row missing</span>{% endif %}
@@ -549,7 +573,7 @@
       <tbody>
         {% for row in coverage.rows %}
           <tr>
-            <td>{{ row.company }}</td>
+            <td>{{ company_link(row.company) }}</td>
             <td>{{ row.position_title }}</td>
             <td>{{ row.status or "—" }}</td>
             <td>{{ row.date_added }}</td>
