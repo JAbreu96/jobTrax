@@ -997,6 +997,20 @@ def _ensure_interviews_schema(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_interviews_job "
         "ON interviews (company, date_added, position_title, link)"
     )
+    # An expression index, because get_interviews matches on LOWER(company) and
+    # a plain column index cannot serve that: SQLite reads LOWER(company) as an
+    # opaque expression and falls back to SCAN. Measured against the live
+    # database, the scoped read cost 797ms where the identically shaped
+    # prep_items read -- same four columns, no LOWER -- cost 142ms, which is
+    # one network round trip and therefore the floor.
+    #
+    # An index rather than dropping the LOWER(): the case-insensitive match is
+    # deliberate and callers that pass a hand-typed company name rely on it.
+    # This keeps the behaviour exactly and makes the planner able to use it.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_interviews_job_ci "
+        "ON interviews (LOWER(company), date_added, position_title, link)"
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_interviews_type ON interviews (interview_type)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_interviews_loop ON interviews (loop_id)")
 

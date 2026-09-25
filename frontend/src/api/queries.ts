@@ -53,10 +53,13 @@ export function useJobs(options: UseJobsOptions = {}) {
 
 export function useJobDetail(
   key: JobKey | undefined,
-  options: { summary?: boolean; job?: boolean; prep?: boolean } = {},
+  options: {
+    summary?: boolean; job?: boolean; prep?: boolean; companyProfile?: boolean;
+  } = {},
 ) {
   return useQuery({
-    queryKey: ["jobDetail", key, options.summary, options.job, options.prep],
+    queryKey: ["jobDetail", key, options.summary, options.job, options.prep,
+               options.companyProfile],
     queryFn: () => {
       const k = key as JobKey;
       const params = new URLSearchParams({
@@ -68,6 +71,7 @@ export function useJobDetail(
       if (options.summary === false) params.set("summary", "0");
       if (options.job) params.set("job", "1");
       if (options.prep) params.set("prep", "1");
+      if (options.companyProfile) params.set("company_profile", "1");
       return getJSON<JobDetail>(`/api/jobs/detail?${params.toString()}`);
     },
     enabled: key !== undefined,
@@ -88,10 +92,19 @@ export function useSilence() {
   });
 }
 
-export function useRecruiters() {
+/*
+ * `enabled` matters more here than anywhere else in this file. /api/recruiters
+ * runs four queries -- one of them a per-recruiter subquery count over all 107
+ * -- and measured 1,974ms against the live database. The job view needs none of
+ * it to render: the job's own recruiter name arrives with the detail payload.
+ * The list fills one <select> on the People tab, so it is fetched when that tab
+ * is opened and not before.
+ */
+export function useRecruiters(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["recruiters"],
     queryFn: () => getJSON<RecruitersResponse>("/api/recruiters"),
+    enabled: options.enabled ?? true,
   });
 }
 
