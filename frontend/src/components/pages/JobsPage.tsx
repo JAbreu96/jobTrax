@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useConfig } from "../../api/queries";
 import { postJSON } from "../../api/client";
 import { AddJobModal } from "../shared/AddJobModal";
@@ -24,6 +24,7 @@ import styles from "./JobsPage.module.css";
 
 export default function JobsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   /*
    * Read once, from the URL the page loaded with. The funnel filter and the
@@ -59,6 +60,15 @@ export default function JobsPage() {
    * keystroke would make Back walk letter by letter out of a search.
    */
   useEffect(() => {
+    /*
+     * Only while the list is the page. This component stays mounted with a
+     * drawer open over it -- that is the point of the drawer -- and the real
+     * address bar then reads /job?company=…, so rewriting it here would
+     * overwrite a job's deep link with the list's search term. `location` is
+     * no use for the check: <Routes location={background}> means useLocation
+     * hands this subtree the list's own location, which is "/" either way.
+     */
+    if (window.location.pathname !== "/") return;
     const params = new URLSearchParams(window.location.search);
     const term = (filters.q || "").trim();
     if (term) params.set("q", term);
@@ -115,7 +125,19 @@ export default function JobsPage() {
             truncated={list.data?.truncated}
             sort={sort}
             onSortChange={setSort}
-            onOpenJob={(job) => navigate(jobViewPath(job))}
+            /*
+             * `backgroundLocation` is what makes this a drawer rather than a
+             * page: App.tsx keeps rendering this list for that location and
+             * draws the job on top, so the list keeps its scroll position,
+             * its filters and its 1,088 loaded rows.
+             *
+             * History state and not a query flag, deliberately -- state does
+             * not survive a reload, and a reloaded /job has no list behind it
+             * to be a drawer over. It is a real push either way, so Back
+             * closes the drawer without anything here arranging for it to.
+             */
+            onOpenJob={(job) =>
+              navigate(jobViewPath(job), { state: { backgroundLocation: location } })}
             statuses={config.data?.status_values ?? []}
             /*
              * Resolves false rather than throwing so the cell can put back

@@ -6,6 +6,25 @@
   border-radius: var(--radius);
   font-size: var(--fs-body);
   line-height: var(--lh-body);
+
+  /*
+   * This is a container, so the rules below can ask how wide *it* is rather
+   * than how wide the window is. The two stopped being the same thing when
+   * the drawer arrived: the same view renders 1180px on its own route and
+   * 720px inside a panel, on the same 1400px screen. A viewport media query
+   * would keep the 340px rail beside the content in that panel and squeeze
+   * the description into ~300px -- the exact complaint this whole view was
+   * built to answer, reintroduced by the container it is put in.
+   */
+  container: jobview / inline-size;
+}
+
+/* Fills the panel it is handed; the panel draws the border and the shadow. */
+.inDrawer {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
 }
 
 /* --- header ---------------------------------------------------------------- */
@@ -175,14 +194,26 @@
 .delete:hover { color: #b3261e; border-color: #b3261e; }
 
 /* --- narrow ----------------------------------------------------------------
-   One breakpoint. The rail goes above the panel rather than below it: where
-   the job stands is the first thing you want on a short window, and it is the
-   block that was asked to stay pinned. */
-@media (max-width: 1000px) {
-  .view { width: calc(100vw - 24px); margin: var(--sp-3) auto; }
+   One breakpoint, asked of the view's own width rather than the window's, so
+   the drawer gets the stacked layout at 720px while the page keeps the rail
+   beside the content at 1180px on that same screen.
+
+   The rail goes above the panel rather than below it: where the job stands is
+   the first thing you want when the two cannot sit side by side, and it is
+   the block that was asked to stay pinned. */
+@container jobview (max-width: 1000px) {
   .body { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
   .body > :last-child { order: -1; }
   .header { flex-wrap: wrap; padding: var(--sp-4); }
   .body { padding: var(--sp-4); }
   .description { max-height: 50vh; }
+}
+
+/* `.view`'s own width cannot come from its own container query -- an element
+   is not styled by the container it establishes, so this one stays a viewport
+   query. It is about the window, which is the right question for it: how much
+   room the card has on the page. The drawer overrides it outright. */
+@media (max-width: 1000px) {
+  .view { width: calc(100vw - 24px); margin: var(--sp-3) auto; }
+  .inDrawer { width: 100%; margin: 0; }
 }
