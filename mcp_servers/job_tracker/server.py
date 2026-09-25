@@ -227,6 +227,28 @@ def update_job_status(company: str, status: str,
         row = matches[0]
     else:
         row = _find_one_match(company)
+
+    # "Never downgrade a status" (SKILL.md) was a rule enforced only by the
+    # calling LLM's judgment; a misclassified email had no guardrail against
+    # silently regressing e.g. Phone Screen back to Applied. Rejected is the
+    # one status allowed to move backward — a cold outreach can be turned
+    # down by a company that was never formally applied to.
+    if status != "Rejected":
+        current_rank = jobs_db.status_rank(row["status"])
+        new_rank = jobs_db.status_rank(status)
+        if current_rank == -1 or new_rank == -1:
+            raise ValueError(
+                f"Cannot compare status ranks for '{row['status']}' -> '{status}' "
+                f"on '{row['company']}' / '{row['position_title']}' — one of them "
+                "isn't in STATUS_ORDER. Refusing rather than guessing an order."
+            )
+        if new_rank < current_rank:
+            raise ValueError(
+                f"Refusing to downgrade '{row['company']}' / '{row['position_title']}' "
+                f"from '{row['status']}' to '{status}' — status only moves forward, "
+                "except Rejected, which may always be set."
+            )
+
     jobs_db.update_status(row["company"], row["date_added"], status,
                           row["position_title"], row["link"])
 
