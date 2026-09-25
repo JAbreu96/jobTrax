@@ -1,14 +1,11 @@
 import { Routes, Route } from "react-router-dom";
+import JobsPage from "./components/pages/JobsPage";
 import JobViewPage from "./components/pages/JobViewPage";
 import "./styles/tokens.css";
 
-// Still placeholders. The jobs table, the board and insights are each their
-// own cutover; /job below is the first route here that renders real UI, and is
-// reached from the Jinja table rather than from these.
-function JobsPlaceholder() {
-  return <h1>Jobs table — not yet ported</h1>;
-}
-
+// The board and insights are still their own cutovers. The jobs list is real
+// as of this rung, but read-only -- Flask's "/" still serves the Jinja table,
+// and this lives at /app until the React one can edit.
 function KanbanPlaceholder() {
   return <h1>Kanban board — not yet ported</h1>;
 }
@@ -25,7 +22,7 @@ function InsightsPlaceholder() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<JobsPlaceholder />} />
+      <Route path="/" element={<JobsPage />} />
       <Route path="/kanban" element={<KanbanPlaceholder />} />
       <Route path="/insights" element={<InsightsPlaceholder />} />
       {/* The job key is four columns, so it rides in the query string rather

@@ -18,9 +18,13 @@ function renderAt(path: string, basename?: string) {
 // Proves the Vite + Vitest + React Testing Library + jsdom wiring works.
 // Phases 1-3 depend on this scaffold being sound before they add real tests.
 describe("App", () => {
-  it("renders the jobs placeholder at /", () => {
+  it("renders the real jobs list at /, not a placeholder", () => {
+    // The first route to stop being a placeholder. It fetches, so with no
+    // stubbed fetch it lands on its loading state -- which is enough to prove
+    // the route resolves to JobsPage rather than to nothing.
     renderAt("/");
-    expect(screen.getByText(/jobs table — not yet ported/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading jobs/i)).toBeInTheDocument();
+    expect(screen.queryByText(/jobs table — not yet ported/i)).toBeNull();
   });
 
   it("routes to each placeholder", () => {
