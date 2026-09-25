@@ -39,7 +39,11 @@ export function jobViewPath(job: JobKey): string {
   return `/job?${params.toString()}`;
 }
 
-export default function JobViewPage() {
+export default function JobViewPage({ layout = "page" }: {
+  /** Passed straight through to JobView. The wiring is identical in a drawer
+   *  and on the page; only the box around it differs. */
+  layout?: "page" | "drawer";
+} = {}) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const key = keyFromParams(params);
@@ -94,6 +98,7 @@ export default function JobViewPage() {
 
   return (
     <JobView
+      layout={layout}
       job={{ ...(job as Job), job_summary: detail.data?.job_summary }}
       rounds={detail.data?.interviews ?? []}
       interviewTypes={config.data?.interview_types ?? []}

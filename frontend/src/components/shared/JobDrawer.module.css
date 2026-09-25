@@ -1,0 +1,94 @@
+/*
+ * The drawer: a panel pinned to the right edge, over a dimmed list.
+ *
+ * 720px wide, which is the number the rest of the view was already built for:
+ * JobView's rail is 340px and its prose measure is 72ch, so 720 minus the
+ * padding leaves the content column at roughly that measure with the rail
+ * beside it. Wider and the list behind stops being usable as context; narrower
+ * and the rail has to stack, which is what the container query handles.
+ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  animation: fade 140ms ease-out;
+}
+
+.panel {
+  width: min(720px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.25);
+  animation: slide 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
+ * The panel scrolls, not the page -- the body is locked while this is open
+ * (see JobDrawer.tsx). `contain` stops a wheel gesture that reaches the end of
+ * this region from continuing into whatever is behind the scrim.
+ */
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.barButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-tab);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.barButton:hover { text-decoration: underline; }
+
+.close {
+  background: none;
+  border: none;
+  padding: 0 var(--sp-2);
+  font-size: 22px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.close:hover { color: var(--text); }
+
+@keyframes slide {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/*
+ * A drawer that slides is a drawer that moves a lot of pixels across most of
+ * the screen. Honour the setting that exists for exactly that.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .scrim, .panel { animation: none; }
+}

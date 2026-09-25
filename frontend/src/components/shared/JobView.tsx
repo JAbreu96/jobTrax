@@ -64,6 +64,17 @@ export interface JobViewProps {
     field: CompanySection | "website", value: string,
   ) => void | Promise<unknown>;
   onDelete: () => void | Promise<unknown>;
+  /**
+   * "page" is the standalone route: a centred card with its own width and
+   * margins. "drawer" fills the panel it is handed instead -- no width of its
+   * own, no margin, no outer border, since the panel already draws one.
+   *
+   * This switches the *outer* box only. The internal layout (whether the rail
+   * sits beside the content or above it) is not a prop and must not become
+   * one: it responds to the width this ends up with, through a container
+   * query. See the module CSS.
+   */
+  layout?: "page" | "drawer";
   onClose?: () => void;
   /** Fires on every tab change, so the page can defer a fetch until the tab
    *  that needs it is actually opened. */
@@ -76,6 +87,7 @@ export function JobView({
   job, rounds, interviewTypes, recruiters,
   onSaveField, setRecruiter, createRecruiter,
   onAddInterview, onDeleteInterview, onDelete, onClose, onTabChange,
+  layout = "page",
   companyProfile = null, companyLoading, onSaveCompanySection,
   prepItems = [], onAddPrepItem, onSetPrepDone, onEditPrepItem, onDeletePrepItem,
   confirm = defaultConfirm, notify = defaultNotify,
@@ -107,7 +119,7 @@ export function JobView({
   const save = (field: string) => (value: string) => { void onSaveField(field, value); };
 
   return (
-    <article className={styles.view}>
+    <article className={`${styles.view} ${layout === "drawer" ? styles.inDrawer : ""}`}>
       <header className={styles.header}>
         <div className={styles.identity}>
           <h1 className={styles.title}>{job.position_title || "Untitled role"}</h1>
