@@ -89,6 +89,9 @@ export interface JobsPage {
 // ?summary=0 (the client already has it cached), so it's optional here.
 export interface JobDetail {
   prep_items?: PrepItem[];
+  // Rides along on ?company_profile=1 rather than costing its own request: it
+  // is keyed on the employer, which this endpoint already has.
+  company_profile?: CompanyProfile | null;
   interviews: Interview[];
   job_summary?: string;
   // Only when the caller asks for it (?job=1). The table never does -- it is

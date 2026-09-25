@@ -65,6 +65,9 @@ export interface JobViewProps {
   ) => void | Promise<unknown>;
   onDelete: () => void | Promise<unknown>;
   onClose?: () => void;
+  /** Fires on every tab change, so the page can defer a fetch until the tab
+   *  that needs it is actually opened. */
+  onTabChange?: (tab: TabName) => void;
   confirm?: ConfirmFn;
   notify?: NotifyFn;
 }
@@ -72,7 +75,7 @@ export interface JobViewProps {
 export function JobView({
   job, rounds, interviewTypes, recruiters,
   onSaveField, setRecruiter, createRecruiter,
-  onAddInterview, onDeleteInterview, onDelete, onClose,
+  onAddInterview, onDeleteInterview, onDelete, onClose, onTabChange,
   companyProfile = null, companyLoading, onSaveCompanySection,
   prepItems = [], onAddPrepItem, onSetPrepDone, onEditPrepItem, onDeletePrepItem,
   confirm = defaultConfirm, notify = defaultNotify,
@@ -97,6 +100,7 @@ export function JobView({
     e.preventDefault();
     const next = (i + delta + TABS.length) % TABS.length;
     setTab(TABS[next]);
+    onTabChange?.(TABS[next]);
     tabRefs.current[next]?.focus();
   }
 
@@ -133,7 +137,7 @@ export function JobView({
                 aria-controls={`panel-${name}`}
                 tabIndex={tab === name ? 0 : -1}
                 className={`${styles.tab} ${tab === name ? styles.tabActive : ""}`}
-                onClick={() => setTab(name)}
+                onClick={() => { setTab(name); onTabChange?.(name); }}
                 onKeyDown={(e) => onTabKey(e, i)}
               >
                 {name}

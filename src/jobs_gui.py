@@ -368,35 +368,52 @@ def api_job_detail():
     if not key["company"]:
         return jsonify({"error": "company is required"}), 400
 
-    payload = {"interviews": get_interviews(**key)}
-    if request.args.get("summary") not in ("0", "false", "no"):
-        row = get_db().execute(
-            "SELECT job_summary FROM jobs WHERE company = ? AND date_added = ? "
-            "AND position_title = ? AND link = ?",
-            (key["company"], key["date_added"], key["position_title"], key["link"]),
-        ).fetchone()
-        payload["job_summary"] = (row["job_summary"] if row else "") or ""
-
+    want_summary = request.args.get("summary") not in ("0", "false", "no")
     # ?job=1 adds the row itself. The table never needs it -- it is expanding a
     # row it already holds -- but the job view at /app is reached by a full page
     # load out of that table, so it starts with an empty cache and no way to ask
-    # for one row. Without this it had to pull the whole list to find it: 1.5MB
-    # and ~1.2s, measured, on every single open, to render fifteen fields.
-    #
-    # Opt-in rather than always-on, so the table's expand does not start
-    # carrying a payload it would throw away.
-    if request.args.get("job") in ("1", "true", "yes"):
+    # for one row. Opt-in rather than always-on, so the table's expand does not
+    # start carrying a payload it would throw away.
+    want_job = request.args.get("job") in ("1", "true", "yes")
+    want_prep = request.args.get("prep") in ("1", "true", "yes")
+    want_company = request.args.get("company_profile") in ("1", "true", "yes")
+
+    payload = {"interviews": get_interviews(**key)}
+
+    # One SELECT for both, where there used to be two. They read the same row by
+    # the same key, and against Turso each statement is a network round trip --
+    # measured at 334ms and 382ms for the two halves of one row, where the row
+    # itself costs nothing to find. Every query on this endpoint is latency, so
+    # the only lever that moves is how many there are.
+    columns = []
+    if want_summary:
+        columns.append("job_summary")
+    if want_job:
+        columns.extend(LIST_COLUMNS)
+    if columns:
         row = get_db().execute(
-            f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs WHERE company = ? "
+            f"SELECT {', '.join(columns)} FROM jobs WHERE company = ? "
             "AND date_added = ? AND position_title = ? AND link = ?",
             (key["company"], key["date_added"], key["position_title"], key["link"]),
         ).fetchone()
-        payload["job"] = _with_recruiter(dict(row)) if row else None
+        if want_summary:
+            payload["job_summary"] = ((row["job_summary"] if row else "") or "")
+        if want_job:
+            payload["job"] = _with_recruiter(
+                {c: row[c] for c in LIST_COLUMNS}) if row else None
 
-    # Same opt-in shape as ?job=1 above, and for the same reason: the table's
-    # expand has no prep checklist to show and should not pay for one.
-    if request.args.get("prep") in ("1", "true", "yes"):
+    # Same opt-in shape, and for the same reason: the table's expand has no
+    # prep checklist to show and should not pay for one.
+    if want_prep:
         payload["prep_items"] = get_prep_items(**key)
+
+    # The company profile rides along rather than costing its own request. It is
+    # keyed on the employer, which this endpoint already has, and the job view
+    # needs both on every open -- a second HTTP round trip to fetch one row by a
+    # key we are holding was 471ms of the ~5.2s that open cost.
+    if want_company:
+        payload["company_profile"] = get_company_profile(key["company"])
+
     return jsonify(payload)
 
 
