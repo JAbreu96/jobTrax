@@ -53,7 +53,16 @@
   position: relative;
 }
 
-.rendered:not(.expanded)::after {
+/*
+ * The fade is gated on `.clamped`, which the component adds only once it has
+ * measured real overflow -- NOT on :not(.expanded) like the max-height above.
+ * They cannot share a selector: the max-height has to apply before the
+ * measurement or scrollHeight equals clientHeight and nothing ever reads as
+ * overflowing. Gating both together therefore means either no clamp or a fade
+ * over every short field, and the second is what shipped: a two-line note in
+ * the status rail had its last line greyed out as though it were cut off.
+ */
+.rendered.clamped::after {
   content: "";
   position: absolute;
   left: 0;
@@ -92,4 +101,12 @@
   min-height: 80px;
   font: inherit;
   white-space: pre-wrap;
+}
+
+/* Stands in for content that has not been written yet -- an invitation, so it
+   reads differently from prose somebody chose to write. */
+.placeholder {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
 }

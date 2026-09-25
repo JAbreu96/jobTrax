@@ -287,3 +287,32 @@ export interface SilenceStats {
   ghosted_after_days: number;
   no_response_after_days: number;
 }
+
+// ---------------------------------------------------------------------------
+// Company research
+// ---------------------------------------------------------------------------
+
+// The order here is the order the Company tab renders, and it is a reading
+// order rather than an alphabetical one: what the company is, then what they
+// build, then who you would work with, then the money, then what just
+// happened, then your own angle on it.
+export const COMPANY_SECTIONS = [
+  "about", "product", "team", "funding", "recent_news", "why_me",
+] as const;
+
+export type CompanySection = (typeof COMPANY_SECTIONS)[number];
+
+export interface CompanyProfile extends Record<CompanySection, string> {
+  company_key: string;
+  display_name: string;
+  website: string;
+  researched_at: string;
+  updated_at: string;
+}
+
+// GET /api/companies/profile. `profile` is null for a company nobody has
+// researched yet -- the common case, and not an error.
+export interface CompanyProfileResponse {
+  company: string;
+  profile: CompanyProfile | null;
+}

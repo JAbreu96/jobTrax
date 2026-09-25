@@ -8,16 +8,18 @@
  * and a line length (--measure), and giving everything else somewhere to be
  * that is not beside it.
  *
- * Company is deliberately absent from the tab list here. It is a research
- * notebook backed by a `companies` table that does not exist yet; shipping it
- * now would mean a tab that is blank on every job, which teaches you not to
- * click tabs. It joins in the PR that gives it something to read.
+ * Company sits second because it is the tab you open when preparing rather
+ * than when triaging: Overview is the posting, Company is the employer behind
+ * every posting from them, People is who you have spoken to, Prep is the
+ * rounds. That is also roughly the order you need them in as a job moves.
  *
  * Owns no data fetching -- same convention as every field component it
  * composes. JobViewPage does that and passes it down.
  */
 import { useEffect, useRef, useState } from "react";
-import type { Interview, InterviewType, Job, Recruiter } from "../../api/types";
+import type {
+  CompanyProfile, CompanySection, Interview, InterviewType, Job, Recruiter,
+} from "../../api/types";
 import type {
   CreateRecruiterFields, SetRecruiterResult,
 } from "../../hooks/useJobFieldEditing";
@@ -27,12 +29,13 @@ import { DateField } from "./DateField";
 import { DetailField } from "./DetailField";
 import { FollowupField } from "./FollowupField";
 import { InterviewsField } from "./InterviewsField";
+import { CompanyTab } from "./CompanyTab";
 import { MarkdownField } from "./MarkdownField";
 import { RecruiterField } from "./RecruiterField";
 import { StatusRail } from "./StatusRail";
 import styles from "./JobView.module.css";
 
-const TABS = ["Overview", "People", "Prep"] as const;
+const TABS = ["Overview", "Company", "People", "Prep"] as const;
 export type TabName = (typeof TABS)[number];
 
 export interface JobViewProps {
@@ -48,6 +51,11 @@ export interface JobViewProps {
     type_label?: string; self_rating?: string; notes?: string;
   }) => Promise<unknown>;
   onDeleteInterview: (id: number) => Promise<unknown>;
+  companyProfile?: CompanyProfile | null;
+  companyLoading?: boolean;
+  onSaveCompanySection: (
+    field: CompanySection | "website", value: string,
+  ) => void | Promise<unknown>;
   onDelete: () => void | Promise<unknown>;
   onClose?: () => void;
   confirm?: ConfirmFn;
@@ -58,6 +66,7 @@ export function JobView({
   job, rounds, interviewTypes, recruiters,
   onSaveField, setRecruiter, createRecruiter,
   onAddInterview, onDeleteInterview, onDelete, onClose,
+  companyProfile = null, companyLoading, onSaveCompanySection,
   confirm = defaultConfirm, notify = defaultNotify,
 }: JobViewProps) {
   // Always Overview on open, never the last tab used. "Readable on a whim"
@@ -150,6 +159,12 @@ export function JobView({
                                onSave={save("job_summary")} />
               </div>
             </section>
+          </Panel>
+
+          <Panel name="Company" active={tab}>
+            <CompanyTab company={job.company} profile={companyProfile}
+                        isLoading={companyLoading}
+                        onSaveSection={onSaveCompanySection} />
           </Panel>
 
           <Panel name="People" active={tab}>

@@ -1,0 +1,69 @@
+.notebook {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.state { color: var(--muted); margin: 0; }
+
+/* --- header ---------------------------------------------------------------- */
+
+.meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.companyName {
+  margin: 0;
+  font-size: var(--fs-section);
+  font-weight: 600;
+}
+
+.researched {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+
+.website {
+  flex: none;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.website:hover { text-decoration: underline; }
+
+/* --- body ------------------------------------------------------------------ */
+
+.empty {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  max-width: var(--measure);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* The section heading is rendered by MarkdownField (labelAs="h3") so that it
+   shares a row with that field's Edit control. Styled from here by element
+   rather than by class, because the class on it belongs to that component's
+   own hashed stylesheet. */
+.prose h3 {
+  margin: 0;
+  font-size: var(--fs-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.prose { max-width: var(--measure); }
