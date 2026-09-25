@@ -16,3 +16,10 @@
 @media (max-width: 1000px) {
   .page { width: calc(100vw - 24px); margin: var(--sp-3) auto; }
 }
+
+.empty {
+  margin: 0;
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+  color: var(--muted);
+}
