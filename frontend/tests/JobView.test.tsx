@@ -37,6 +37,7 @@ function round(overrides: Partial<Interview> = {}): Interview {
 
 function renderView(props: Partial<React.ComponentProps<typeof JobView>> = {}) {
   const onSaveField = vi.fn();
+  const onSaveCompanySection = vi.fn();
   const onDelete = vi.fn();
   render(
     <JobView
@@ -49,11 +50,12 @@ function renderView(props: Partial<React.ComponentProps<typeof JobView>> = {}) {
       createRecruiter={vi.fn()}
       onAddInterview={vi.fn().mockResolvedValue({})}
       onDeleteInterview={vi.fn().mockResolvedValue({})}
+      onSaveCompanySection={onSaveCompanySection}
       onDelete={onDelete}
       {...props}
     />,
   );
-  return { onSaveField, onDelete };
+  return { onSaveField, onSaveCompanySection, onDelete };
 }
 
 describe("JobView tabs", () => {
@@ -78,7 +80,7 @@ describe("JobView tabs", () => {
 
     await userEvent.keyboard("{ArrowRight}");
 
-    expect(screen.getByRole("tab", { name: "People" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Company" })).toHaveAttribute(
       "aria-selected", "true");
   });
 

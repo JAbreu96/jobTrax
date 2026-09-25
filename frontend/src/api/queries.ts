@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getJSON } from "./client";
 import type {
   AppConfig,
+  CompanyProfileResponse,
   FunnelStats,
   Job,
   JobDetail,
@@ -107,5 +108,19 @@ export function useInterviewStats() {
   return useQuery({
     queryKey: ["interviewStats"],
     queryFn: () => getJSON<InterviewStats>("/api/interviews/stats"),
+  });
+}
+
+// Keyed on the company, not the job. Two roles at one employer share the
+// profile and therefore share the cache entry, so researching from one job and
+// opening the other shows the research already there.
+export function useCompanyProfile(company: string | undefined) {
+  return useQuery({
+    queryKey: ["companyProfile", (company || "").trim().toLowerCase()],
+    queryFn: () =>
+      getJSON<CompanyProfileResponse>(
+        `/api/companies/profile?company=${encodeURIComponent(company as string)}`,
+      ),
+    enabled: Boolean((company || "").trim()),
   });
 }
