@@ -36,6 +36,10 @@ from src.jobs_db import (  # noqa: E402
     GHOSTED_AFTER_DAYS,
     RATE_MIN_DENOMINATOR,
     add_interview,
+    COMPANY_SECTIONS,
+    get_company_profile,
+    set_company_profile,
+    rename_company_profile,
     delete_interview,
     delete_job_by_key,
     export_csv,
@@ -551,7 +555,71 @@ def api_update_job():
     result = {"ok": True}
     if date_applied_value is not None:
         result["date_applied"] = date_applied_value
+    if field == "company" and value != company:
+        result["company_profile_moved"] = _carry_company_profile(company, value, db)
     return jsonify(result)
+
+
+def _carry_company_profile(old_company: str, new_company: str, db) -> bool:
+    """
+    Follows a renamed company to its new key, if it was the last job under the old one.
+
+    The profile is keyed on the employer, not on a job, so two roles at one
+    company share one row. Renaming one of them is not a rename of the company
+    -- it is usually a correction to that posting -- and moving the research out
+    from under the sibling would be wrong. Only when nothing is left behind does
+    the profile follow.
+
+    Best-effort: the rename itself has already committed, and a profile that
+    stays on the old key is recoverable by hand. Failing the request after a
+    successful write would be a worse lie than returning False.
+    """
+    if not get_company_profile(old_company):
+        return False
+    remaining = db.execute(
+        "SELECT 1 FROM jobs WHERE company = ? LIMIT 1", (old_company,)
+    ).fetchone()
+    if remaining:
+        return False
+    try:
+        return rename_company_profile(old_company, new_company)
+    except Exception:
+        return False
+
+
+# --- Company research --------------------------------------------------------
+# The GUI reads and edits; it never researches. Flask cannot invoke a Claude
+# skill, and pretending otherwise would put a "Research this company" button
+# here that could only ever spin. Claude writes through the MCP tool
+# set_company_profile; these two routes are the viewer and the correcting pen.
+
+@app.route("/api/companies/profile")
+def api_company_profile():
+    company = (request.args.get("company") or "").strip()
+    if not company:
+        return jsonify({"error": "company is required"}), 400
+    profile = get_company_profile(company)
+    # A company with nothing written yet is the normal case, not an error: the
+    # tab has to render an empty notebook you can start typing into.
+    return jsonify({"company": company, "profile": profile})
+
+
+@app.route("/api/companies/profile/update", methods=["POST"])
+def api_update_company_profile():
+    payload = request.get_json(force=True)
+    company = (payload.get("company") or "").strip()
+    field = payload.get("field")
+    value = payload.get("value", "")
+
+    if not company:
+        return jsonify({"error": "company is required"}), 400
+    if field not in set(COMPANY_SECTIONS) | {"website"}:
+        return jsonify({"error": f"field '{field}' is not a company profile field"}), 400
+
+    profile = set_company_profile(company, **{field: value})
+    if profile is None:
+        return jsonify({"error": "could not write the company profile"}), 500
+    return jsonify({"ok": True, "profile": profile})
 
 
 # --- Interviews -------------------------------------------------------------
