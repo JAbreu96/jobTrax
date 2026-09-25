@@ -82,6 +82,7 @@ function assertEqual(actual, expected, msg) {
 const EXPORTS = [
   'rowKey', 'localISODate', 'startOfWeekISO', 'isValidISODate',
   'parseFollowupLog', 'serializeFollowupLog', 'jobKeyFields',
+  'searchFromQuery', 'queryWithSearch', 'wantsArchived',
   'renderMarkdownInto', 'appendInlineMarkdown', 'checkMarkdownOverflow',
   'refreshMarkdownFields', 'saveField', 'deleteJob', 'postJSON',
   'loadRecruiters', 'recruiterBadge', 'recruiterLabel', 'saveJobRecruiter',
@@ -156,6 +157,63 @@ check('jobKeyFields blanks every missing half of the key', () => {
   assertEqual(JSON.stringify(key), JSON.stringify({
     company: 'Acme', date_added: '', position_title: '', link: '',
   }));
+});
+
+// --- deeplinked search -----------------------------------------------------
+// The Insights page links to the table with ?q=<company>, and the table writes
+// the box back into the URL as it is typed. Both directions are pure string
+// work, which is why they live here and not in the template.
+
+check('searchFromQuery reads q', () => {
+  assertEqual(JobFields.searchFromQuery('?q=NACE%20Partners'), 'NACE Partners');
+});
+
+check('searchFromQuery is empty when there is no q', () => {
+  assertEqual(JobFields.searchFromQuery(''), '');
+  assertEqual(JobFields.searchFromQuery('?stage=rejected'), '');
+});
+
+check('searchFromQuery trims, so a stray space is not a filter', () => {
+  assertEqual(JobFields.searchFromQuery('?q=%20%20Acme%20%20'), 'Acme');
+});
+
+check('queryWithSearch sets q', () => {
+  assertEqual(JobFields.queryWithSearch('', 'Acme'), '?q=Acme');
+});
+
+check('queryWithSearch drops q when the box is cleared', () => {
+  assertEqual(JobFields.queryWithSearch('?q=Acme', ''), '');
+  assertEqual(JobFields.queryWithSearch('?q=Acme', '   '), '');
+});
+
+check('queryWithSearch leaves the funnel params alone', () => {
+  // Arriving from the funnel and then typing must not drop the stage filter,
+  // which is the only thing keeping archived rows in the list.
+  const out = JobFields.queryWithSearch('?stage=rejected&source=hand', 'Acme');
+  const p = new URLSearchParams(out);
+  assertEqual(p.get('stage'), 'rejected');
+  assertEqual(p.get('source'), 'hand');
+  assertEqual(p.get('q'), 'Acme');
+});
+
+check('queryWithSearch returns empty rather than a bare ?', () => {
+  // replaceState is called with pathname + this; a lone '?' would leave a
+  // trailing character in the address bar for every cleared search.
+  assertEqual(JobFields.queryWithSearch('', ''), '');
+});
+
+check('wantsArchived follows the funnel', () => {
+  assertEqual(JobFields.wantsArchived('?stage=rejected'), true);
+});
+
+check('wantsArchived honours an explicit include_archived', () => {
+  assertEqual(JobFields.wantsArchived('?q=Acme&include_archived=1'), true);
+});
+
+check('wantsArchived is false for a plain search', () => {
+  // A typed search must not silently change the population being searched.
+  assertEqual(JobFields.wantsArchived('?q=Acme'), false);
+  assertEqual(JobFields.wantsArchived(''), false);
 });
 
 check('recruiterLabel pairs the name with the agency', () => {
