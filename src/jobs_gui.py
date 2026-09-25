@@ -497,6 +497,37 @@ def api_add_job():
     return jsonify(job)
 
 
+# Tables that carry a copy of the jobs primary key instead of a foreign key to
+# it -- see _ensure_interviews_schema's docstring in jobs_db for why the key is
+# copied rather than referenced. The tradeoff is that nothing at the database
+# level keeps them in step, so renaming a company silently strands every child
+# row: the parent moves to a new key and the children keep pointing at the old
+# one. That is not hypothetical. A census on 2026-09-24 found 5 orphaned
+# `interviews` rows and 3 orphaned `recruiter_jobs` rows already in the live
+# database, invisible in every view because every read joins on the key.
+#
+# `company` is the only one of the four key columns in EDITABLE_COLUMNS, so a
+# rename is the only way to reach this through the API -- which is what makes a
+# fix this small sufficient. Any future table keyed the same way belongs here.
+_CHILD_TABLES = ("interviews", "recruiter_jobs")
+
+
+def _carry_children(db, old_company, new_company, date_added, position_title, link):
+    """Move a renamed job's child rows to its new key, in the caller's transaction.
+
+    Deliberately not committed here: it runs inside api_update_job's try block
+    so that a collision raised by the parent UPDATE rolls the children back
+    with it, rather than leaving them pointing at a company the job no longer
+    has.
+    """
+    for table in _CHILD_TABLES:
+        db.execute(
+            f"UPDATE {table} SET company = ? WHERE company = ? AND date_added = ? "
+            f"AND position_title = ? AND link = ?",
+            (new_company, old_company, date_added, position_title, link),
+        )
+
+
 @app.route("/api/jobs/update", methods=["POST"])
 def api_update_job():
     payload = request.get_json(force=True)
@@ -557,6 +588,9 @@ def api_update_job():
                 f"AND position_title = ? AND link = ?",
                 (value, company, date_added, position_title or "", row_link or ""),
             )
+        if field == "company" and value != company:
+            _carry_children(db, company, value, date_added,
+                            position_title or "", row_link or "")
         db.commit()
     except _WRITE_EXC:
         # Backstop for a collision the SELECT above raced past.
