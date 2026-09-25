@@ -145,6 +145,16 @@
 .prose { max-width: var(--measure); }
 .prose p, .prose li { line-height: var(--lh-body); }
 
+/* Matches PrepChecklist's section headings so the Prep tab reads as three
+   sections of one list rather than two lists and a heading. */
+.prepHeading {
+  margin: 0;
+  font-size: var(--fs-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
 /* --- footer ---------------------------------------------------------------- */
 
 .footer {

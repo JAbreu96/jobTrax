@@ -12,6 +12,7 @@ import {
   useCompanyProfile, useConfig, useJobDetail, useRecruiters,
 } from "../../api/queries";
 import { useCompanyEditing } from "../../hooks/useCompanyEditing";
+import { usePrepEditing } from "../../hooks/usePrepEditing";
 import { useInterviewEditing } from "../../hooks/useInterviewEditing";
 import { useJobFieldEditing } from "../../hooks/useJobFieldEditing";
 import type { Job, JobKey } from "../../api/types";
@@ -55,7 +56,7 @@ export default function JobViewPage() {
    * Jinja table, so the cache is always empty on arrival and "already cached"
    * never happens. Every open paid 1.5MB and ~1.2s to find fifteen fields.
    */
-  const detail = useJobDetail(key, { job: true });
+  const detail = useJobDetail(key, { job: true, prep: true });
   const job = detail.data?.job;
 
   const { saveField, deleteJob, setRecruiter, createRecruiter } = useJobFieldEditing({
@@ -70,6 +71,7 @@ export default function JobViewPage() {
    */
   const companyProfile = useCompanyProfile(key?.company);
   const { saveSection } = useCompanyEditing(key?.company ?? "");
+  const prep = usePrepEditing(key ?? ({} as JobKey));
 
   if (!key) return <p className={styles.state}>No job specified.</p>;
   if (detail.isLoading) return <p className={styles.state}>Loading…</p>;
@@ -97,6 +99,11 @@ export default function JobViewPage() {
       companyProfile={companyProfile.data?.profile ?? null}
       companyLoading={companyProfile.isLoading}
       onSaveCompanySection={(field, value) => saveSection.mutateAsync({ field, value })}
+      prepItems={detail.data?.prep_items ?? []}
+      onAddPrepItem={(fields) => prep.addItem.mutateAsync(fields)}
+      onSetPrepDone={(id, done) => prep.setDone.mutateAsync({ id, done })}
+      onEditPrepItem={(id, body) => prep.editItem.mutateAsync({ id, body })}
+      onDeletePrepItem={(id) => prep.deleteItem.mutateAsync(id)}
       onDelete={() => deleteJob.mutateAsync(job)}
     />
   );

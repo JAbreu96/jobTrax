@@ -53,10 +53,10 @@ export function useJobs(options: UseJobsOptions = {}) {
 
 export function useJobDetail(
   key: JobKey | undefined,
-  options: { summary?: boolean; job?: boolean } = {},
+  options: { summary?: boolean; job?: boolean; prep?: boolean } = {},
 ) {
   return useQuery({
-    queryKey: ["jobDetail", key, options.summary, options.job],
+    queryKey: ["jobDetail", key, options.summary, options.job, options.prep],
     queryFn: () => {
       const k = key as JobKey;
       const params = new URLSearchParams({
@@ -67,6 +67,7 @@ export function useJobDetail(
       });
       if (options.summary === false) params.set("summary", "0");
       if (options.job) params.set("job", "1");
+      if (options.prep) params.set("prep", "1");
       return getJSON<JobDetail>(`/api/jobs/detail?${params.toString()}`);
     },
     enabled: key !== undefined,

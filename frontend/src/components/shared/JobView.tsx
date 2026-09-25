@@ -18,7 +18,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type {
-  CompanyProfile, CompanySection, Interview, InterviewType, Job, Recruiter,
+  CompanyProfile, CompanySection, Interview, InterviewType, Job, PrepItem,
+  PrepKind, Recruiter,
 } from "../../api/types";
 import type {
   CreateRecruiterFields, SetRecruiterResult,
@@ -31,6 +32,7 @@ import { FollowupField } from "./FollowupField";
 import { InterviewsField } from "./InterviewsField";
 import { CompanyTab } from "./CompanyTab";
 import { MarkdownField } from "./MarkdownField";
+import { PrepChecklist } from "./PrepChecklist";
 import { RecruiterField } from "./RecruiterField";
 import { StatusRail } from "./StatusRail";
 import styles from "./JobView.module.css";
@@ -51,6 +53,11 @@ export interface JobViewProps {
     type_label?: string; self_rating?: string; notes?: string;
   }) => Promise<unknown>;
   onDeleteInterview: (id: number) => Promise<unknown>;
+  prepItems?: PrepItem[];
+  onAddPrepItem: (fields: { kind: PrepKind; body: string }) => Promise<unknown>;
+  onSetPrepDone: (id: number, done: boolean) => Promise<unknown>;
+  onEditPrepItem: (id: number, body: string) => Promise<unknown>;
+  onDeletePrepItem: (id: number) => Promise<unknown>;
   companyProfile?: CompanyProfile | null;
   companyLoading?: boolean;
   onSaveCompanySection: (
@@ -67,6 +74,7 @@ export function JobView({
   onSaveField, setRecruiter, createRecruiter,
   onAddInterview, onDeleteInterview, onDelete, onClose,
   companyProfile = null, companyLoading, onSaveCompanySection,
+  prepItems = [], onAddPrepItem, onSetPrepDone, onEditPrepItem, onDeletePrepItem,
   confirm = defaultConfirm, notify = defaultNotify,
 }: JobViewProps) {
   // Always Overview on open, never the last tab used. "Readable on a whim"
@@ -178,10 +186,26 @@ export function JobView({
                            fieldClass={styles.field} onSave={save("followup_log")} />
           </Panel>
 
+          {/* Checklist first, rounds last. The rounds are a record of what is
+              booked; the checklist is the thing you act on, and only 2 of the
+              1,314 tracked jobs have a round still in the future -- so leading
+              with the schedule would lead with an empty box on almost every
+              job. */}
           <Panel name="Prep" active={tab}>
-            <InterviewsField rounds={rounds} interviewTypes={interviewTypes}
-                             onAdd={onAddInterview} onDelete={onDeleteInterview}
-                             confirm={confirm} />
+            <PrepChecklist items={prepItems}
+                           onAdd={onAddPrepItem} onSetDone={onSetPrepDone}
+                           onEdit={onEditPrepItem} onDelete={onDeletePrepItem}
+                           confirm={confirm} />
+            {/* styles.prepHeading, not sectionHeading: this sits directly
+                under two headings PrepChecklist renders as small uppercase
+                labels, and a 15px semibold "Rounds" beneath them reads as a
+                different kind of thing rather than the third section. */}
+            <section className={styles.section}>
+              <h3 className={styles.prepHeading}>Rounds</h3>
+              <InterviewsField rounds={rounds} interviewTypes={interviewTypes}
+                               onAdd={onAddInterview} onDelete={onDeleteInterview}
+                               confirm={confirm} />
+            </section>
           </Panel>
         </div>
 
