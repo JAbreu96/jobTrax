@@ -298,6 +298,7 @@ def _ensure_schema(conn, path: Optional[str] = None) -> None:
     _ensure_interviews_schema(conn)
     _ensure_recruiters_schema(conn)
     _ensure_companies_schema(conn)
+    _ensure_prep_schema(conn)
     conn.execute(_META_DDL)
     if path is not None:
         _SCHEMA_ENSURED.add(path)
@@ -2637,5 +2638,175 @@ def rename_company_profile(old_company: str, new_company: str) -> bool:
         )
         conn.commit()
         return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# --- Interview prep ----------------------------------------------------------
+# What to do before a round, and what to ask when you are in it.
+#
+# One table for both, not two. A task and a question have the same shape, the
+# same lifecycle and the same two states -- and `done` on a question means
+# "asked", which is exactly the thing you need to know mid-loop. Splitting them
+# would duplicate every read, write and rename path to distinguish two rows that
+# differ by one word.
+#
+# Keyed on the job, unlike `companies`: preparing for a screen at one company is
+# not preparing for the other role there. That also means these rows orphan on a
+# company rename the way `interviews` and `recruiter_jobs` do, so they join the
+# carry list in jobs_gui.
+
+PREP_KINDS = ("task", "question")
+
+_PREP_ITEMS_DDL = """
+        CREATE TABLE IF NOT EXISTS prep_items (
+            id             INTEGER PRIMARY KEY,
+            company        TEXT NOT NULL,
+            date_added     TEXT NOT NULL DEFAULT '',
+            position_title TEXT NOT NULL DEFAULT '',
+            link           TEXT NOT NULL DEFAULT '',
+            kind           TEXT NOT NULL,
+            body           TEXT NOT NULL,
+            done           INTEGER NOT NULL DEFAULT 0,
+            sort_order     INTEGER NOT NULL DEFAULT 0,
+            source         TEXT NOT NULL DEFAULT 'hand',
+            created_at     TEXT NOT NULL DEFAULT ''
+        )
+"""
+
+
+def _ensure_prep_schema(conn) -> None:
+    conn.execute(_PREP_ITEMS_DDL)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_prep_items_job "
+        "ON prep_items (company, date_added, position_title, link)"
+    )
+
+
+def get_prep_items(company: str = "", date_added: str = "",
+                   position_title: str = "", link: str = "") -> list:
+    """
+    Every prep row for one job, tasks before questions, insertion order within each.
+
+    Ordered by (kind, sort_order, id) rather than by `done`: a list that
+    reshuffles itself as you tick things loses your place mid-prep, which is the
+    one moment you are least able to afford it.
+    """
+    conn = _connect()
+    if not conn:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT * FROM prep_items WHERE company = ? AND date_added = ? "
+            "AND position_title = ? AND link = ? "
+            "ORDER BY CASE kind WHEN 'task' THEN 0 ELSE 1 END, sort_order, id",
+            (company, date_added, position_title, link),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def add_prep_item(company: str, date_added: str, position_title: str, link: str,
+                  kind: str, body: str, source: str = "hand") -> Optional[int]:
+    """
+    Adds one task or question. Returns the new row id, or None if it was refused.
+
+    Refuses a blank body and an unrecognised kind rather than storing either: an
+    empty checklist row cannot be told apart from a rendering fault, and a third
+    `kind` would silently vanish from a UI that renders exactly two sections.
+    """
+    body = (body or "").strip()
+    if not body or kind not in PREP_KINDS:
+        return None
+
+    conn = _connect(create=True)
+    if not conn:
+        return None
+    try:
+        # Appends to the end of its own section. MAX+1 over the job's rows of
+        # that kind, computed in the INSERT so two adds cannot race to the same
+        # position -- which a read-then-write would allow, and which shows up as
+        # two items swapping places on a later reload.
+        cur = conn.execute(
+            "INSERT INTO prep_items (company, date_added, position_title, link, "
+            "kind, body, done, sort_order, source, created_at) "
+            "SELECT ?, ?, ?, ?, ?, ?, 0, "
+            "COALESCE(MAX(sort_order), -1) + 1, ?, ? FROM prep_items "
+            "WHERE company = ? AND date_added = ? AND position_title = ? "
+            "AND link = ? AND kind = ?",
+            (company, date_added, position_title, link, kind, body, source,
+             str(date.today()),
+             company, date_added, position_title, link, kind),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def set_prep_item_done(item_id: int, done: bool) -> bool:
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET done = ? WHERE id = ?",
+            (1 if done else 0, item_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_prep_item(item_id: int, body: str) -> bool:
+    """Rewrites one item's text. A blank body is refused, not stored."""
+    body = (body or "").strip()
+    if not body:
+        return False
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET body = ? WHERE id = ?", (body, item_id))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_prep_item(item_id: int) -> bool:
+    conn = _connect()
+    if not conn:
+        return False
+    try:
+        cur = conn.execute("DELETE FROM prep_items WHERE id = ?", (item_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def carry_prep_items(old_company: str, new_company: str, date_added: str,
+                     position_title: str, link: str) -> int:
+    """
+    Moves a job's prep rows onto its new key after a rename. Returns rows moved.
+
+    Unconditional, unlike the company profile's carry: these rows belong to this
+    posting and to nothing else, so there is no sibling they could be stranding.
+    """
+    conn = _connect()
+    if not conn:
+        return 0
+    try:
+        cur = conn.execute(
+            "UPDATE prep_items SET company = ? WHERE company = ? AND "
+            "date_added = ? AND position_title = ? AND link = ?",
+            (new_company, old_company, date_added, position_title, link),
+        )
+        conn.commit()
+        return cur.rowcount
     finally:
         conn.close()
