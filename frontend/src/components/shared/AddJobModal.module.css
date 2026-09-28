@@ -1,0 +1,116 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sp-8) var(--sp-4);
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.dialog {
+  width: min(680px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-6);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.title { margin: 0; font-size: var(--fs-title); }
+
+.close {
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 var(--sp-1);
+}
+.close:hover { color: var(--text); }
+
+.fetchRow { display: flex; gap: var(--sp-2); }
+.fetchRow .input { flex: 1; }
+
+/* Two columns for the short fields, one for the prose below. Stacks at the
+   one breakpoint the rest of this view uses. */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.field > span {
+  font-size: var(--fs-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.field input,
+.field select,
+.field textarea,
+.input {
+  font: inherit;
+  font-size: var(--fs-body);
+  padding: var(--sp-2);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.field textarea { resize: vertical; line-height: var(--lh-body); }
+
+.error {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid #b3261e;
+  border-radius: var(--radius);
+  color: #b3261e;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+.primary,
+.secondary {
+  font: inherit;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.primary { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+.primary:disabled { opacity: 0.6; cursor: default; }
+.secondary { background: none; color: var(--text); border: 1px solid var(--border); }
+.secondary:hover { border-color: var(--accent); color: var(--accent); }
+.secondary:disabled { opacity: 0.6; cursor: default; }
+
+@media (max-width: 1000px) {
+  .grid { grid-template-columns: 1fr; }
+}

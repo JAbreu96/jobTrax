@@ -5,8 +5,12 @@
  * this is still read-only. It takes over "/" in rung 4, once it can edit.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useConfig } from "../../api/queries";
+import { postJSON } from "../../api/client";
+import { AddJobModal } from "../shared/AddJobModal";
+import { dailyGoalProgress } from "../../lib/dailyGoal";
 import { useJobFieldEditing } from "../../hooks/useJobFieldEditing";
 import { useJobsProgressive } from "../../hooks/useJobsProgressive";
 import { JobFilterBar } from "../shared/JobFilterBar";
@@ -14,6 +18,7 @@ import { JobsTable } from "../shared/JobsTable";
 import { jobViewPath } from "./JobViewPage";
 import { filterJobs, funnelFromSearch, searchFromQuery, wantsArchived } from "../../lib/jobFilters";
 import type { JobFilters } from "../../lib/jobFilters";
+import type { Job } from "../../api/types";
 import type { SortColumn, SortDirection } from "../../lib/jobFields";
 import styles from "./JobsPage.module.css";
 
@@ -39,6 +44,8 @@ export default function JobsPage() {
   const config = useConfig();
   const list = useJobsProgressive({ includeArchived });
   const { saveField } = useJobFieldEditing();
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
   const jobs = useMemo(() => list.data?.jobs ?? [], [list.data]);
 
   const matched = useMemo(
@@ -66,8 +73,23 @@ export default function JobsPage() {
   // rows and is reported inside the table as `truncated`.
   if (list.isError) return <p className={styles.state}>Could not load the jobs list.</p>;
 
+  const goal = dailyGoalProgress(jobs);
+
   return (
     <main className={styles.page}>
+      <div className={styles.toolbar}>
+        <span className={goal.met ? styles.goalMet : styles.goal}>
+          Applied today: {goal.applied} / {goal.goal}
+        </span>
+        {/* A plain link, not a fetch: the response is a file download with a
+            Content-Disposition header, and routing it through JS would mean
+            rebuilding the save dialog the browser already has. */}
+        <a className={styles.linkish} href="/api/jobs/export.csv">Export CSV</a>
+        <button type="button" className={styles.primary} onClick={() => setAdding(true)}>
+          + Add Job
+        </button>
+      </div>
+
       <JobFilterBar
         jobs={jobs}
         statuses={config.data?.status_values ?? []}
@@ -111,6 +133,26 @@ export default function JobsPage() {
             }}
           />
         )}
+
+      {adding && (
+        <AddJobModal
+          statuses={config.data?.status_values ?? []}
+          onFetchUrl={(url) => postJSON("/api/jobs/fetch_url", { url })}
+          onSubmit={async (fields) => {
+            const created = await postJSON<Job>("/api/jobs/add", fields);
+            /*
+             * Invalidated rather than pushed onto the cached list. The vanilla
+             * version unshifts the new row, which is right for a list it owns
+             * outright -- but the server decides date_added and date_applied,
+             * and a row assembled from the form would disagree with the one
+             * stored until the next reload.
+             */
+            await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+            return created;
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </main>
   );
 }
