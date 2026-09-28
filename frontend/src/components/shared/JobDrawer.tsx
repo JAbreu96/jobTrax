@@ -16,13 +16,36 @@ import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styles from "./JobDrawer.module.css";
 
+/** Matches the slide in JobDrawer.module.css. */
+const SLIDE_MS = 180;
+
 export function JobDrawer({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const panel = useRef<HTMLDivElement>(null);
   const restoreFocus = useRef<Element | null>(null);
+  const openedAt = useRef(Date.now());
 
   const close = () => navigate(-1);
+
+  /*
+   * The scrim ignores clicks for as long as the panel takes to slide in.
+   *
+   * The panel starts off-screen, so for those 180ms the scrim is what sits
+   * under the cursor -- and the cursor is exactly where the row the user just
+   * clicked was. Double-click a row, or click it twice because the first one
+   * did not seem to land, and the second click closes the drawer the first one
+   * opened. It reads as the drawer refusing to open.
+   *
+   * Timed rather than tied to animationend: under prefers-reduced-motion
+   * there is no animation and therefore no event, and that is precisely the
+   * case where the panel is under the cursor immediately and the guard should
+   * expire at once.
+   */
+  const closeFromScrim = () => {
+    if (Date.now() - openedAt.current < SLIDE_MS) return;
+    close();
+  };
 
   useEffect(() => {
     /*
@@ -46,13 +69,23 @@ export function JobDrawer({ children }: { children: React.ReactNode }) {
      * The page behind does not scroll while the drawer is open -- otherwise a
      * wheel gesture past the end of the panel scrolls the list underneath,
      * which looks like the drawer moving. The panel keeps its own scroll.
+     *
+     * Locked on <html>, not only on <body>. The usual trick is body alone,
+     * relying on overflow propagating from it to the viewport -- and measuring
+     * it here, it does not: with the lock applied and body's computed
+     * overflow-y reading "hidden", document.documentElement.scrollTop still
+     * moved to 800. <html> is what document.scrollingElement points at on this
+     * page, so <html> is what has to be told.
      */
-    const previous = document.body.style.overflow;
+    const previousHtml = document.documentElement.style.overflow;
+    const previousBody = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
 
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
+      document.documentElement.style.overflow = previousHtml;
+      document.body.style.overflow = previousBody;
       (restoreFocus.current as HTMLElement | null)?.focus?.();
     };
     // navigate is stable; this runs once per drawer open.
@@ -66,7 +99,7 @@ export function JobDrawer({ children }: { children: React.ReactNode }) {
     navigate(location.pathname + location.search, { replace: true });
 
   return (
-    <div className={styles.scrim} onClick={close} data-testid="drawer-scrim">
+    <div className={styles.scrim} onClick={closeFromScrim} data-testid="drawer-scrim">
       <div
         ref={panel}
         className={styles.panel}

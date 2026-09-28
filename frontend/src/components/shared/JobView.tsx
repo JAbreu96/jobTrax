@@ -174,9 +174,12 @@ export function JobView({
             </div>
             <section className={styles.section}>
               <h3 className={styles.sectionHeading}>Job description</h3>
-              {/* expandable={false}: unclamped. The 4.2em clamp existed because
+              {/* expandable={false}: unclamped, and no inner scroll region
+                  either -- the description runs to its full height and the
+                  view scrolls as one thing. The 4.2em clamp existed because
                   the panel lived in a table row and could not push the table
-                  around. It has its own scroll region now. */}
+                  around; nothing here is boxed in like that. Still markdown:
+                  MarkdownField renders it, this only stops truncating it. */}
               <div className={styles.description}>
                 <MarkdownField label="" value={job.job_summary || ""}
                                expandable={false} fieldClass={styles.prose}

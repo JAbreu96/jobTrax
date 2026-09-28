@@ -69,6 +69,9 @@ async function openTheDrawer() {
   return await screen.findByRole("dialog", { name: /job details/i });
 }
 
+/** Waits out the scrim's open guard, which ignores clicks during the slide. */
+const settleTheSlide = () => new Promise((r) => setTimeout(r, 200));
+
 const listRows = () =>
   document.querySelector("tbody")
     ? within(document.querySelector("tbody")!).queryAllByRole("row")
@@ -121,12 +124,40 @@ describe("the ways out of the drawer", () => {
 
   it("closes on a click outside it, but not on one inside", async () => {
     const drawer = await openTheDrawer();
+    await settleTheSlide();
 
     await userEvent.click(drawer);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("drawer-scrim"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("ignores a scrim click while the panel is still sliding in", async () => {
+    /*
+     * The panel starts off-screen, so for those first 180ms the scrim is what
+     * sits under the cursor -- and the cursor is exactly where the row just
+     * clicked was. Double-click a row, or click it twice because the first one
+     * did not seem to land, and the second click closes the drawer the first
+     * one opened. It reads as the drawer refusing to open. Found by clicking a
+     * row twice in a browser.
+     *
+     * Date.now is frozen rather than the click being raced against a real
+     * 180ms window: the guard compares timestamps, and a test that depended on
+     * finishing a click inside a deadline would pass or fail with machine
+     * load.
+     */
+    const frozen = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(frozen);
+    try {
+      await openTheDrawer();
+
+      await userEvent.click(screen.getByTestId("drawer-scrim"));
+
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("leaves the list behind once it closes, not a blank page", async () => {

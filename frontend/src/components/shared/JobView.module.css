@@ -146,13 +146,15 @@
   font-weight: 600;
 }
 
-/* The description gets its own scroll region instead of a clamp.
-   overscroll-behavior matters: without it, reaching the bottom chains the
-   scroll into the page and you lose your place in the job you were reading. */
+/* The description runs to its full height and the view scrolls as one thing.
+
+   It had its own scroll region for a while -- max-height plus overflow -- and
+   that was worse than the clamp it replaced. Two scrollbars on one screen
+   means a wheel gesture does different things a few pixels apart, and the
+   inner one hides how much is left: a 4,000-word posting and a 200-word one
+   look identical from outside the box. The card keeps its border and ground
+   so the description still reads as one block within the tab. */
 .description {
-  max-height: 60vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--sp-4);
@@ -213,7 +215,6 @@
   .body > :last-child { order: -1; }
   .header { flex-wrap: wrap; padding: var(--sp-4); }
   .body { padding: var(--sp-4); }
-  .description { max-height: 50vh; }
 }
 
 /* `.view`'s own width cannot come from its own container query -- an element
