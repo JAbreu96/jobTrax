@@ -1,4 +1,4 @@
-"""The /app shell's two build-dependent links.
+"""The React shell's two build-dependent links.
 
 src/static/dist/ is gitignored, so whether the bundle exists is a property of
 the machine, not of the checkout. Both link decisions in app_shell.html are
@@ -42,7 +42,7 @@ def fake_dist(tmp_path, monkeypatch):
 
 
 def test_unbuilt_bundle_explains_itself_instead_of_serving_a_blank_page(client, fake_dist):
-    html = client.get("/app").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "dist/assets/main.js" not in html
     assert 'id="root"' not in html
@@ -54,7 +54,7 @@ def test_unbuilt_bundle_explains_itself_instead_of_serving_a_blank_page(client, 
 def test_built_bundle_is_mounted(client, fake_dist):
     (fake_dist / "main.js").write_text("// built")
 
-    html = client.get("/app").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "dist/assets/main.js" in html
     assert 'id="root"' in html
@@ -64,10 +64,10 @@ def test_built_bundle_is_mounted(client, fake_dist):
 def test_stylesheet_is_not_linked_when_vite_emitted_none(client, fake_dist):
     (fake_dist / "main.js").write_text("// built")
 
-    html = client.get("/app").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
-    # No component in the entry graph imports CSS yet, so main.css does not
-    # exist. Linking it anyway would 404 on every page load.
+    # A real build emits main.css now, but an unbuilt or half-built tree does
+    # not, and a <link> at a missing stylesheet is a 404 on every page load.
     assert "dist/assets/main.css" not in html
     # The hand-maintained stylesheet is unconditional and shared with the
     # Jinja views -- it must survive the branch above either way.
@@ -78,7 +78,7 @@ def test_stylesheet_is_linked_once_the_build_emits_one(client, fake_dist):
     (fake_dist / "main.js").write_text("// built")
     (fake_dist / "main.css").write_text("/* built */")
 
-    html = client.get("/app").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "dist/assets/main.css" in html
 
@@ -89,16 +89,16 @@ def test_bundle_presence_is_rechecked_per_request(client, fake_dist):
     A value cached at import would keep reporting the bundle missing after the
     very build the page just told the developer to run.
     """
-    assert "build-frontend.sh" in client.get("/app").get_data(as_text=True)
+    assert "build-frontend.sh" in client.get("/").get_data(as_text=True)
 
     (fake_dist / "main.js").write_text("// built")
 
-    assert 'id="root"' in client.get("/app").get_data(as_text=True)
+    assert 'id="root"' in client.get("/").get_data(as_text=True)
 
 
 def test_client_routed_paths_serve_the_same_shell(client, fake_dist):
-    """A hard refresh on /app/<anything> must not 404 at Flask."""
+    """A hard refresh on the job view must not 404 at Flask."""
     (fake_dist / "main.js").write_text("// built")
 
-    assert client.get("/app/job/acme").status_code == 200
-    assert 'id="root"' in client.get("/app/job/acme").get_data(as_text=True)
+    assert client.get("/job?company=Acme").status_code == 200
+    assert 'id="root"' in client.get("/job?company=Acme").get_data(as_text=True)

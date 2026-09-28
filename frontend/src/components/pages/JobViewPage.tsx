@@ -2,10 +2,10 @@
  * Data wiring for the job view: the one place in this tree that fetches.
  *
  * The job key is the four identity columns, carried in the URL rather than in
- * router state, so the page survives a hard refresh and can be linked to from
- * the Jinja table -- which is how it is reached at all until the table is cut
- * over. The link is long and ugly; it is also the only honest key, since
- * company alone is ambiguous for the 174 companies with more than one role.
+ * router state, so the page survives a hard refresh and can be pasted or
+ * bookmarked. The link is long and ugly; it is also the only honest key,
+ * since company alone is ambiguous for the 174 companies with more than one
+ * role.
  */
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -56,11 +56,14 @@ export default function JobViewPage() {
   /*
    * ?job=1 so the row arrives with the summary and the rounds, in one request.
    *
-   * The obvious alternative is to read it out of the cached job list, which is
-   * what this did first -- and it is wrong here in a way it would not be inside
-   * a single-page app: this view is reached by a full page load out of the
-   * Jinja table, so the cache is always empty on arrival and "already cached"
-   * never happens. Every open paid 1.5MB and ~1.2s to find fifteen fields.
+   * The obvious alternative is to read the row out of the cached job list.
+   * Now that "/" is React, arriving from a row click does find it there -- but
+   * a bookmark, a paste or a hard refresh does not, and the summary, the prep
+   * items and the company profile are never in the list payload, so the
+   * request happens either way. `job: true` only widens the column list of a
+   * SELECT that is already being issued; it costs no extra round trip, and
+   * dropping it would trade that for a branch that is wrong on every cold
+   * open.
    */
   const detail = useJobDetail(key, { job: true, prep: true, companyProfile: true });
   const job = detail.data?.job;
