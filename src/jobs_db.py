@@ -619,6 +619,54 @@ def upsert_job(item: dict) -> None:
         conn.close()
 
 
+# Rows per INSERT in upsert_jobs. Each row binds len(COLUMNS) + len(KEY_COLUMNS)
+# = 16 parameters, so 50 rows is 800 -- under the 999-variable ceiling that
+# older SQLite builds still ship with, the one limit that would turn a bigger
+# chunk into an error rather than a slowdown.
+_UPSERT_CHUNK = 50
+
+
+def upsert_jobs(items: list[dict]) -> int:
+    """
+    upsert_job for many rows: the same INSERT OR REPLACE, the same preserved
+    `archived` flag, the same silent skip of a row with no company -- but sent as
+    multi-row statements under one commit. Returns the number of rows written.
+
+    Against Turso every statement and every commit is its own network round
+    trip, and a shared connection only removes the connect. A 2,023-row ApplyPass
+    import through upsert_job still made ~4,000 round trips and took over ten
+    minutes; at 50 rows a statement it is ~41 statements and one commit.
+
+    Rows are written in the order given, so two items sharing a key resolve the
+    way a loop over upsert_job would: the later one wins.
+    """
+    rows = [item for item in items if item.get("company")]
+    if not rows:
+        return 0
+    placeholder = (
+        f"({', '.join(['?'] * len(COLUMNS))}, "
+        f"COALESCE((SELECT archived FROM jobs WHERE "
+        f"          {' AND '.join(f'{c} = ?' for c in KEY_COLUMNS)}), 0))"
+    )
+    conn = _connect(create=True)
+    try:
+        for start in range(0, len(rows), _UPSERT_CHUNK):
+            chunk = rows[start:start + _UPSERT_CHUNK]
+            params: list = []
+            for item in chunk:
+                params += [item.get(c, "") or "" for c in COLUMNS]
+                params += [item.get(c, "") or "" for c in KEY_COLUMNS]
+            conn.execute(
+                f"INSERT OR REPLACE INTO jobs ({', '.join(COLUMNS)}, archived) "
+                f"VALUES {', '.join([placeholder] * len(chunk))}",
+                params
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return len(rows)
+
+
 def _key_clause(position_title: Optional[str], link: Optional[str]) -> tuple[str, list]:
     """
     Row-identity WHERE clause. Each key column supplied narrows the target;
