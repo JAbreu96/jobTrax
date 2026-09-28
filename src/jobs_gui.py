@@ -265,6 +265,18 @@ def _with_recruiter(row: dict, linked=None) -> dict:
     return row
 
 
+# Raw SQL fragment, not a Python-side check: job_summary is deliberately left
+# out of every list-shaped query (see LIST_COLUMNS), so the emptiness check has
+# to happen in SQL, at the same place job_summary itself would have been read.
+_MISSING_DESCRIPTION_SQL = "(job_summary IS NULL OR TRIM(job_summary) = '') AS missing_description"
+
+
+def _coerce_missing_description(row: dict) -> dict:
+    """SQLite hands back 0/1 for the computed column; the wire format is a bool."""
+    row["missing_description"] = bool(row.get("missing_description"))
+    return row
+
+
 @app.route("/api/jobs")
 def api_jobs():
     """
@@ -305,7 +317,10 @@ def api_jobs():
     # Named columns, not SELECT *: dropping job_summary here takes the payload
     # from 2.1MB to 0.68MB and the query from 230ms to 152ms. Trimming in Python
     # instead would still drag the column across the wire from Turso.
-    query = f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs"
+    # missing_description is a computed flag, not job_summary itself -- the row
+    # needs to know whether it has a description to render the incomplete-row
+    # hint, without paying to ship the description text across the wire.
+    query = f"SELECT {', '.join(LIST_COLUMNS)}, {_MISSING_DESCRIPTION_SQL} FROM jobs"
     where, params = [], []
     if not include_archived:
         where.append("archived = 0")
@@ -343,7 +358,7 @@ def api_jobs():
     # runs for every job rendered, and the table is tens of rows against a
     # thousand jobs.
     linked = get_job_recruiters()
-    out = [_with_recruiter(dict(r), linked) for r in rows]
+    out = [_with_recruiter(_coerce_missing_description(dict(r)), linked) for r in rows]
 
     if limit is None:
         return jsonify(out)
@@ -394,6 +409,12 @@ def api_job_detail():
         columns.append("job_summary")
     if want_job:
         columns.extend(LIST_COLUMNS)
+        # Computed in SQL beside the columns it is derived from, not in Python:
+        # job_summary is deliberately absent from LIST_COLUMNS, so there is
+        # nothing on this side to test for emptiness. ?summary=1 does fetch the
+        # text, but ?job=1 alone does not, and the flag has to be right either
+        # way.
+        columns.append(_MISSING_DESCRIPTION_SQL)
     if columns:
         row = get_db().execute(
             f"SELECT {', '.join(columns)} FROM jobs WHERE company = ? "
@@ -403,8 +424,10 @@ def api_job_detail():
         if want_summary:
             payload["job_summary"] = ((row["job_summary"] if row else "") or "")
         if want_job:
-            payload["job"] = _with_recruiter(
-                {c: row[c] for c in LIST_COLUMNS}) if row else None
+            payload["job"] = _with_recruiter(_coerce_missing_description({
+                **{c: row[c] for c in LIST_COLUMNS},
+                "missing_description": row["missing_description"],
+            })) if row else None
 
     # Same opt-in shape, and for the same reason: the table's expand has no
     # prep checklist to show and should not pay for one.

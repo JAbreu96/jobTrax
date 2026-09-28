@@ -253,6 +253,56 @@ describe("JobsTable editing", () => {
   });
 });
 
+describe("JobsTable incomplete rows", () => {
+  /*
+   * A job with no description cannot be prepared for and cannot be judged from
+   * the list, so the row says so. The flag is computed server-side -- the list
+   * payload deliberately omits job_summary, so there is nothing client-side to
+   * test for emptiness.
+   */
+  const badge = () => screen.queryByText("Incomplete");
+
+  it("badges a row whose job has no description", () => {
+    renderTable({ jobs: [job({ missing_description: true })] });
+
+    expect(badge()).toBeInTheDocument();
+  });
+
+  it("leaves a row with a description unbadged", () => {
+    renderTable({ jobs: [job({ missing_description: false })] });
+
+    expect(badge()).toBeNull();
+  });
+
+  it("treats an absent flag as nothing to warn about", () => {
+    // A row cached before the flag existed, or one built by a test, carries no
+    // flag at all. Absent must read as "no warning", never as "no description"
+    // -- the other way round badges the whole list on a stale cache.
+    renderTable({ jobs: [job()] });
+
+    expect(badge()).toBeNull();
+  });
+
+  it("spells out what the badge is about", () => {
+    // "Incomplete" alone is ambiguous on a job tracker -- incomplete
+    // application? incomplete profile? The title says which.
+    renderTable({ jobs: [job({ missing_description: true })] });
+
+    expect(badge()).toHaveAttribute("title", "No job description saved");
+  });
+
+  it("keeps the badge out of the title's truncation", () => {
+    // The badge shares a cell with the position title, which elides when long.
+    // A half-elided "Incomp…" would be worse than no badge at all.
+    renderTable({ jobs: [job({
+      position_title: "Senior Staff Software Engineer, Platform Infrastructure",
+      missing_description: true,
+    })] });
+
+    expect(badge()).toHaveTextContent("Incomplete");
+  });
+});
+
 describe("countLabel", () => {
   it("refuses to quote a total it does not have yet", () => {
     // "50 of 1088" mid-prefetch would be a lie: 1088 is how many have arrived.

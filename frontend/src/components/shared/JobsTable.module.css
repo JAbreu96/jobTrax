@@ -44,6 +44,47 @@
 .row:hover { background: var(--bg); }
 .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* No description saved on this job.
+ *
+ * Amber, not red: this is a gap to fill, not a failure. Red is what the delete
+ * control uses, and a row that looks like an error on a third of the list
+ * teaches you to ignore the colour.
+ *
+ * Shaped like the recruiter pill the board already uses, so the two read as
+ * the same kind of annotation rather than two inventions. */
+.incompleteBadge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #d9a441;
+  color: #d9a441;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The title shares its cell with the badge now. The truncation moves onto the
+   text itself: `text-overflow` needs a block that overflows, and the cell is a
+   flex container. The badge does not shrink -- a half-elided "Incomp…" would
+   be worse than no badge. */
+/* A wrapper inside the cell, not the cell itself.
+ *
+ * `max-width` on a <td> is a hint the auto table layout is free to ignore,
+ * and does -- which is why the `max-width: 24ch` on every cell above has
+ * never actually clipped a title. Making the <td> the flex container took it
+ * out of that layout and the cap suddenly bound, cutting "Software Engineer
+ * (Java Microservices)" down to "Software En…" and leaving 80px of the
+ * column empty beside it. The wrapper flexes; the cell stays a table cell. */
+.titleCell {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.titleText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .table td {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);

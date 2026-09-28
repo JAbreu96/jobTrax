@@ -103,7 +103,23 @@ export function JobsTable({
               <td className={styles.company}>
                 <CompanyCell job={job} onSave={onSaveField} />
               </td>
-              <td>{job.position_title}</td>
+              <td>
+               <div className={styles.titleCell}>
+                <span className={styles.titleText}>{job.position_title}</span>
+                {/*
+                  * A job with no description cannot be prepared for and cannot
+                  * be judged from the list. This said it with a left border
+                  * first; a word is legible where a stripe of colour has to be
+                  * learned, and it says the same thing to a screen reader.
+                  */}
+                {job.missing_description && (
+                  <span className={styles.incompleteBadge}
+                        title="No job description saved">
+                    Incomplete
+                  </span>
+                )}
+               </div>
+              </td>
               <td className={styles.muted}>{job.location || "—"}</td>
               <td className={styles.muted}>{job.date_added}</td>
               <td>
