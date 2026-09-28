@@ -206,3 +206,49 @@ def test_a_refined_summary_is_kept_but_a_blank_one_is_filled(db, paj):
     groups = _classify(paj, [_rec(company="Globex", link="https://x/2")])
     _, _, updates = next((u for u in groups["updates"] if u[1]["company"] == "Globex"), None)
     assert updates["job_summary"]
+
+
+# --- incremental cutoff ------------------------------------------------------
+
+AUTO_NOTE = "Imported from auto-apply export (auto-submitted application)."
+
+
+def test_cutoff_is_the_newest_auto_applied_date_less_the_buffer(paj):
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-20"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-28"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-01"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-26"
+    assert paj.incremental_cutoff(jobs, buffer_days=0) == "2026-09-28"
+
+
+def test_cutoff_ignores_jobs_applied_to_by_hand(paj):
+    # A manual application yesterday says nothing about how far the export has
+    # been imported; letting it set the cutoff would skip older export records.
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-10"},
+        {"notes": "Referred by a friend", "date_applied": "2026-09-27"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-08"
+
+
+def test_cutoff_is_empty_before_the_first_import(paj):
+    assert paj.incremental_cutoff([]) == ""
+    assert paj.incremental_cutoff([{"notes": "manual", "date_applied": "2026-09-27"}]) == ""
+
+
+def test_cutoff_skips_unparseable_dates(paj):
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": ""},
+        {"notes": AUTO_NOTE, "date_applied": "sometime"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-15T10:00:00"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-13"
+
+
+def test_cutoff_flag_reads_the_tracker(db, paj, capsys, monkeypatch):
+    _job(db, "Acme", notes=AUTO_NOTE, applied="2026-09-20")
+    monkeypatch.setattr("sys.argv", ["parse_applied_jobs.py", "--cutoff"])
+    assert paj.main() == 0
+    assert capsys.readouterr().out.strip() == "2026-09-18"

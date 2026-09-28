@@ -25,8 +25,19 @@ through pages. It only reads; it never touches the database.
 3. Click **Job Applied**. Use a coordinate click from a screenshot: the app ignores
    element-ref and synthetic clicks while it is still loading, and the dashboard opens on
    Job Matches, which answers in the same shape.
-4. `__applypassCapture.start()`, then poll `__applypassCapture.status()` until `state` is
-   `done`. Pages take ~8s each. Wait between polls with the `computer` tool's `wait`
+4. Get the cutoff, then start:
+
+   ```bash
+   python scripts/parse_applied_jobs.py --cutoff
+   ```
+
+   It prints the newest auto-applied `date_applied` in the tracker less two days, e.g.
+   `2026-09-26`. Start with `__applypassCapture.start({stopBefore: "2026-09-26"})`: the
+   list is newest-first, so paging stops at the first page holding an older submission
+   and a weekly run is a handful of pages instead of all of them. It prints nothing
+   when no export has been imported yet; then call `start()` with no cutoff.
+
+   Poll `__applypassCapture.status()` until `state` is `done`. Pages take ~8s each. Wait between polls with the `computer` tool's `wait`
    action, **not** a `setTimeout` inside the page: Chrome throttles timers in a
    background tab to as little as once a minute, so an in-page 30s sleep can outlive the
    javascript tool's 45s limit. The same throttling slows the capture itself, so keep
@@ -36,7 +47,11 @@ through pages. It only reads; it never touches the database.
      `wrongTabPagesRefused` and never kept.
    - `stuck`: the app ignored the synthetic click on the next arrow. Click the `›` arrow
      once by coordinates, then `__applypassCapture.resume()`. It continues from there.
-5. Check `records == totalRecords` and `missing` is empty. `__applypassCapture.download()`
+5. Check `missing` is empty. A full run should also have `records == totalRecords`; an
+   incremental one stops early by design, so check `stoppedAt` is set instead — if it
+   is null the cutoff was never reached and the whole list was paged, which is correct
+   but means the tracker was further behind than the cutoff suggested.
+   `__applypassCapture.download()`
    saves `applied_inbox_<timestamp>.json` to `~/Downloads` and returns the filename —
    downloading is a user-visible action, so say what you are saving first.
 6. `mv ~/Downloads/<that filename> data/applied_inbox.json` and close the tab.
