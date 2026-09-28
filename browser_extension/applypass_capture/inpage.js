@@ -155,6 +155,8 @@
     totalPages: null,
     totalRecords: null,
     wrongTab: 0,        // Job Matches pages seen and refused
+    firstTotal: null,   // totalRecords when page 1 first arrived
+    rereading: false,   // the next page 1 is the end-of-run re-read, kept as page 0
     state: "idle",      // idle | running | stuck | done | error
     message: "",
     log: [],
@@ -177,7 +179,12 @@
       state.wrongTab += 1;
       return;
     }
-    state.pages[found.page] = found.records;
+    if (found.page === 1 && state.rereading) {
+      state.pages[0] = found.records;
+    } else {
+      state.pages[found.page] = found.records;
+    }
+    if (found.page === 1 && state.firstTotal === null) state.firstTotal = found.totalRecords;
     if (found.totalPages) state.totalPages = found.totalPages;
     if (found.totalRecords) state.totalRecords = found.totalRecords;
   }
@@ -255,6 +262,17 @@
     return false;
   }
 
+  /** Re-select 100 per page, which reloads the list from page 1. */
+  async function reloadFirstPage() {
+    const select = pageSizeSelect();
+    const current = select.options[select.selectedIndex]?.textContent.trim();
+    if (current === "100") {
+      setPageSize("50");
+      await sleep(3000);
+    }
+    setPageSize("100");
+  }
+
   async function run() {
     state.state = "running";
     state.message = "";
@@ -263,14 +281,8 @@
       // A size change reloads from page 1, which is the only way to get page 1's
       // response without navigating. Already on 100, flip through 50 so the
       // change still fires.
-      const select = pageSizeSelect();
-      if (!select) return fail("no page-size select -- is the Job Applied list showing?");
-      const current = select.options[select.selectedIndex]?.textContent.trim();
-      if (current === "100") {
-        setPageSize("50");
-        await sleep(3000);
-      }
-      setPageSize("100");
+      if (!pageSizeSelect()) return fail("no page-size select -- is the Job Applied list showing?");
+      await reloadFirstPage();
       if (!(await waitFor(1, FIRST_PAGE_TIMEOUT_MS))) {
         return fail(state.wrongTab
           ? "the list showing is Job Matches, not Job Applied: click the Job Applied " +
@@ -308,6 +320,22 @@
     if (missing.length) {
       return fail(`finished paging but pages ${missing.join(", ")} never arrived`);
     }
+
+    // The service keeps applying while this runs, and every new application lands
+    // on page 1 -- already read. The first live run finished one record short of
+    // the total for exactly this reason. Re-read page 1 once at the end, keeping
+    // the old copy too: records it held may have shifted onto a page 2 that was
+    // read before the shift.
+    const grew = (state.totalRecords || 0) - (state.firstTotal || 0);
+    if (grew > 0) {
+      state.rereading = true;
+      await reloadFirstPage();
+      const ok = await waitFor(0, FIRST_PAGE_TIMEOUT_MS);
+      state.rereading = false;
+      state.log.push(`page 1 re-read: ${grew} submitted during the run`);
+      if (!ok) return fail(`${grew} application(s) were submitted during the run and ` +
+                           `re-reading page 1 failed; start() again to retry`);
+    }
     state.state = "done";
   }
 
@@ -324,7 +352,7 @@
 
   function status() {
     const records = mergePages(state.pages);
-    const got = Object.keys(state.pages).map(Number);
+    const got = Object.keys(state.pages).map(Number).filter((n) => n >= 1);
     return {
       state: state.state,
       message: state.message,
