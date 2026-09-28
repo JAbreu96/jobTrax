@@ -192,20 +192,21 @@ def test_two_blank_link_rows_sharing_a_title_are_refused_not_guessed(db, paj):
     assert groups["updates"] == []
 
 
-def test_a_refined_summary_is_kept_but_a_blank_one_is_filled(db, paj):
+def test_the_export_description_is_never_imported(db, paj):
     """
-    The GUI runs refine_summary over job_summary and the column is user
-    editable, so raw export HTML must not overwrite it -- but an empty summary
-    is worth filling.
+    Descriptions are looked up on demand, not stored: a new row lands with a
+    blank summary, and a matched row's summary -- blank or hand-refined -- is
+    left exactly as it was.
     """
-    _job(db, summary="Hand-refined: senior backend, Go, remote.", link="https://x/1")
-    _, _, updates = _classify(paj, [_rec(link="https://x/1")])["updates"][0]
-    assert "job_summary" not in updates
+    rows = paj.parse_export([_rec(company="Initech", link="https://x/9",
+                                  description="<p>A long posting.</p>")])["rows"]
+    assert rows[0]["job_summary"] == ""
 
+    _job(db, summary="Hand-refined: senior backend, Go, remote.", link="https://x/1")
     _job(db, company="Globex", summary="", link="https://x/2")
-    groups = _classify(paj, [_rec(company="Globex", link="https://x/2")])
-    _, _, updates = next((u for u in groups["updates"] if u[1]["company"] == "Globex"), None)
-    assert updates["job_summary"]
+    groups = _classify(paj, [_rec(link="https://x/1"), _rec(company="Globex", link="https://x/2")])
+    for _row, _match, updates in groups["updates"] + groups["unchanged"]:
+        assert "job_summary" not in updates
 
 
 # --- incremental cutoff ------------------------------------------------------

@@ -246,7 +246,7 @@ State:
 | `date_added` | `datetime_matched` | when the service matched the job, not when it applied |
 | `date_applied` | `application_submitted_date` | |
 | `status` | — | `Applied` when submitted, else `Tracking` |
-| `job_summary` | `job_description` | HTML stripped to text, capped at 2500 chars |
+| `job_summary` | — | never imported; left blank. Look a posting up on demand, or fill blanks with `scripts/backfill_job_fields.py` |
 | `location` | `location_name` + `location_type` | `California (On-site)` |
 | `notes` | — | provenance, the export's own match score, seniority, board, source IDs |
 
