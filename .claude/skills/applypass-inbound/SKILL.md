@@ -237,6 +237,40 @@ State:
 
 ---
 
+## Unattended runs
+
+`scripts/run-applypass-inbound.sh` runs this skill daily at 09:30 with nobody watching.
+Its prompt pre-authorizes the download and the `--write --clear` import. Nothing else
+is authorized. Steps 0–6 apply unchanged, with these rules on top, because no one is
+there to ask:
+
+- **Start from an empty inbox.** If `data/applied_inbox.json` is not `[]`, an earlier run
+  stopped partway. Stop without touching it — someone has to look at what is in it.
+- **Always incremental.** Use `--cutoff`, or no cutoff when it prints nothing.
+- **Touch only three controls.** On the ApplyPass page, click only the Job Applied tab,
+  the page-size dropdown and the pager arrows. Never click like/dislike, **Pause
+  Applying**, Edit Profile, or anything that changes the account.
+- **Never sign in.** If the page shows a login screen, the session has expired: stop.
+  Credentials are the user's to enter.
+- **Bounded recovery.** Allow one Job Matches retry and two `stuck` recoveries, each a
+  single coordinate click. After that, stop without downloading.
+- **Download only a complete capture.** `state` is `done` and `missing` is empty.
+- **Close the tab** whether the run succeeded or not.
+- **A row delta that does not match the NEW count** (Step 5) is still reported, as a
+  stop. The write has happened by then, but the mismatch needs a person.
+
+End with exactly one line the runner reads:
+
+```
+RESULT: imported <n> new, <m> updated
+RESULT: stopped: <one-line reason>
+```
+
+The runner raises a macOS notification on any stop or failure. A clean import stays
+silent.
+
+---
+
 ## Field mapping
 
 `scripts/parse_applied_jobs.py` owns this; it is recorded here only where the choice is not obvious from the code.

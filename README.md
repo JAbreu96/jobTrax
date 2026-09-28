@@ -262,14 +262,14 @@ the skill.
 | Skill | Why |
 |---|---|
 | `work-search-record` | fills New York State's WS-5 unemployment form. Useless elsewhere |
-| `applypass-inbound` | imports one specific paid auto-apply service's export format |
+| `applypass-inbound` | imports one specific paid auto-apply service's export format. Scheduled daily at 09:30, and **local only**: it drives your logged-in Chrome |
 | `new-session` | opens a Terminal window. macOS only |
 
 ---
 
 ## Scheduling
 
-Seven launchd agents drive the scheduled skills. The real plists live outside the
+Eight launchd agents drive the scheduled skills. The real plists live outside the
 repo, so templates ship in [`scripts/launchd/`](scripts/launchd/) — that
 directory's README covers loading them and, more importantly, the two pinned
 toolchain paths in every `scripts/run-*.sh` that will be wrong on your machine.
@@ -279,6 +279,12 @@ one. The pinned Python must be the interpreter that has `mcp` installed, or the
 `job_tracker` server dies on import and the run proceeds with no tracker tools and
 no obvious explanation. The model is pinned deliberately too — an interactive
 `/model` change once silently repointed every scheduled job.
+
+Order matters in the morning. `inbox-triage` only updates rows that already exist,
+and ApplyPass rows arrive only through `applypass-inbound`, so the import runs at
+09:30 and triage's first run follows at 10:00. With triage first, rejections for
+the previous day's applications find no row, and triage's watermark moves past
+them for good.
 
 ### Cloud runs
 
