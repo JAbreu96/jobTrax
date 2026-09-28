@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  readPage, isAppliedPage, mergePages, missingPages, pickNext, timestamp,
+  readPage, isAppliedPage, reachedCutoff, mergePages, missingPages, pickNext, timestamp,
 } = require("./inpage.js");
 
 const rec = (id, submitted = "2026-09-01T10:00:00.000Z") => ({
@@ -63,6 +63,24 @@ test("a page with any unsubmitted record is not from Job Applied", () => {
   assert.equal(isAppliedPage([rec(1), rec(2)]), true);
   assert.equal(isAppliedPage([rec(1), { ...rec(2), _api_c2_application_submitted_bool: false }]),
                false);
+});
+
+test("a page reaches the cutoff once any record was submitted before it", () => {
+  // Job Applied is newest-first, so the first page holding an older record is
+  // the last page an incremental capture needs.
+  const page = [rec(1, "2026-09-27T09:00:00.000Z"), rec(2, "2026-09-25T23:59:00.000Z")];
+  assert.equal(reachedCutoff(page, "2026-09-26"), true);
+  assert.equal(reachedCutoff(page, "2026-09-25"), false);
+});
+
+test("no cutoff means page everything", () => {
+  assert.equal(reachedCutoff([rec(1, "2020-01-01T00:00:00.000Z")], ""), false);
+  assert.equal(reachedCutoff([rec(1, "2020-01-01T00:00:00.000Z")], undefined), false);
+});
+
+test("a record with no submission date never trips the cutoff", () => {
+  assert.equal(reachedCutoff([{ ...rec(1), _api_c2_application_submitted_date: null }],
+                             "2026-09-26"), false);
 });
 
 test("merging dedupes on match_id across pages", () => {

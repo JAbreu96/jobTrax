@@ -23,6 +23,7 @@
 //
 //   <contents of this file>                       // installs window.__applypassCapture
 //   __applypassCapture.start()                    // runs in the background
+//   __applypassCapture.start({stopBefore: "2026-09-26"})   // incremental: see below
 //   __applypassCapture.status()                   // poll until state is "done"
 //   __applypassCapture.download()                 // -> "applied_inbox_<stamp>.json"
 //
@@ -89,6 +90,20 @@
     return records.every((r) => r._api_c2_application_submitted_bool === true);
   }
 
+  /**
+   * Whether a page reaches back past the cutoff, so paging can stop after it.
+   * Job Applied is sorted newest submission first, so once a page holds a record
+   * submitted before `stopBefore` every later page is older still -- and already
+   * in the tracker. `stopBefore` comes from `parse_applied_jobs.py --cutoff`.
+   */
+  function reachedCutoff(records, stopBefore) {
+    if (!stopBefore) return false;
+    return records.some((r) => {
+      const submitted = String(r._api_c2_application_submitted_date || "").slice(0, 10);
+      return submitted !== "" && submitted < stopBefore;
+    });
+  }
+
   /** Every captured page's records, deduped on match_id, in page order. */
   function mergePages(pages) {
     const byId = new Map();
@@ -130,7 +145,7 @@
   }
 
   const helpers = {
-    readPage, isAppliedPage, mergePages, missingPages, pickNext, timestamp, RECORD_KEY,
+    readPage, isAppliedPage, reachedCutoff, mergePages, missingPages, pickNext, timestamp, RECORD_KEY,
   };
 
   if (typeof module !== "undefined" && module.exports) {
@@ -157,6 +172,8 @@
     wrongTab: 0,        // Job Matches pages seen and refused
     firstTotal: null,   // totalRecords when page 1 first arrived
     rereading: false,   // the next page 1 is the end-of-run re-read, kept as page 0
+    stopBefore: "",     // incremental cutoff; "" pages everything
+    stoppedAt: null,    // the page that reached the cutoff
     state: "idle",      // idle | running | stuck | done | error
     message: "",
     log: [],
@@ -294,6 +311,10 @@
     while (true) {
       const p = pager();
       if (!p) return fail("pager not found");
+      if (state.pages[p.current] && reachedCutoff(state.pages[p.current], state.stopBefore)) {
+        state.stoppedAt = p.current;
+        break;
+      }
       const target = p.current + 1;
       if (state.totalPages && p.current >= state.totalPages) break;
       if (!p.next) return fail(`no next arrow on page ${p.current}`);
@@ -316,7 +337,7 @@
       }
     }
 
-    const missing = missingPages(state.pages, state.totalPages || 0);
+    const missing = missingPages(state.pages, state.stoppedAt || state.totalPages || 0);
     if (missing.length) {
       return fail(`finished paging but pages ${missing.join(", ")} never arrived`);
     }
@@ -344,8 +365,11 @@
     state.message = message;
   }
 
-  function start() {
+  function start(options = {}) {
     if (state.state === "running") return status();
+    // The first cutoff given sticks, so a resume() cannot quietly widen or narrow
+    // a run that is half done.
+    if (options.stopBefore && !state.stopBefore) state.stopBefore = options.stopBefore;
     run().catch((e) => fail(String(e && e.stack || e)));
     return status();
   }
@@ -360,7 +384,10 @@
       totalPages: state.totalPages,
       records: records.length,
       totalRecords: state.totalRecords,
-      missing: state.totalPages ? missingPages(state.pages, state.totalPages) : [],
+      missing: state.totalPages
+        ? missingPages(state.pages, state.stoppedAt || state.totalPages) : [],
+      stopBefore: state.stopBefore,
+      stoppedAt: state.stoppedAt,
       wrongTabPagesRefused: state.wrongTab,
       lastLog: state.log.slice(-3),
     };

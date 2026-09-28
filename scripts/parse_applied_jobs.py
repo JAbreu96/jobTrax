@@ -9,6 +9,7 @@ Paste each export into the inbox file (data/applied_inbox.json), then:
     python scripts/parse_applied_jobs.py --write --clear   # import, archive, empty the inbox
     python scripts/parse_applied_jobs.py other.json        # or parse any other file
     python scripts/parse_applied_jobs.py --all             # include not-yet-submitted
+    python scripts/parse_applied_jobs.py --cutoff          # date an incremental capture can stop at
 """
 
 import argparse
@@ -16,14 +17,14 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.jobs_db import (  # noqa: E402
-    COLUMNS, _use_libsql, get_all_jobs, shared_connection, status_rank,
+    COLUMNS, _is_auto, _use_libsql, get_all_jobs, shared_connection, status_rank,
     update_job_fields, upsert_jobs
 )
 
@@ -31,6 +32,13 @@ P = "_api_c2_"
 SUMMARY_MAX_CHARS = 2500
 STATUS_APPLIED = "Applied"
 STATUS_TRACKING = "Tracking"
+
+# How far before the newest imported application an incremental capture reaches.
+# date_applied is stored as a local date and ApplyPass stamps UTC, so the two can
+# disagree by a day at either end; a second day covers an import taken while the
+# service was still submitting that day's batch. Re-capturing them is free -- the
+# merge reports them unchanged.
+CUTOFF_BUFFER_DAYS = 2
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 # Scratch file to paste each export into; emptied after a successful --write --clear.
@@ -220,6 +228,31 @@ def merge_updates(incoming: dict, existing: dict) -> dict:
         updates["status"] = incoming_status
 
     return updates
+
+
+def incremental_cutoff(jobs: list[dict], buffer_days: int = CUTOFF_BUFFER_DAYS) -> str:
+    """
+    The oldest submission date an incremental capture still needs: the newest
+    date_applied among rows this importer wrote, less a buffer. '' when nothing
+    has been imported yet, which means capture everything.
+
+    Only auto-applied rows count. A job you applied to by hand yesterday says
+    nothing about how far the export has been imported, and letting it set the
+    cutoff would skip every export record older than it.
+    """
+    newest = None
+    for job in jobs:
+        if not _is_auto(job):
+            continue
+        try:
+            applied = date.fromisoformat((job.get("date_applied") or "")[:10])
+        except ValueError:
+            continue
+        if newest is None or applied > newest:
+            newest = applied
+    if newest is None:
+        return ""
+    return (newest - timedelta(days=buffer_days)).isoformat()
 
 
 def _pick(candidates: list[dict]) -> dict | None:
@@ -415,7 +448,18 @@ def main() -> int:
                     help="Write the parsed tracker rows to PATH as JSON")
     ap.add_argument("--clear", action="store_true",
                     help="After a successful --write, archive the input file and empty it")
+    ap.add_argument("--cutoff", action="store_true",
+                    help="Print the submission date an incremental capture can stop at, "
+                         "then exit")
     args = ap.parse_args()
+
+    if args.cutoff:
+        cutoff = incremental_cutoff(get_all_jobs(include_archived=True))
+        if cutoff:
+            print(cutoff)
+        else:
+            print("No imported applications yet -- capture everything.", file=sys.stderr)
+        return 0
 
     if not os.path.exists(args.json_file):
         print(f"No such file: {args.json_file}", file=sys.stderr)
