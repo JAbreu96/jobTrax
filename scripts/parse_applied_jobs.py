@@ -19,8 +19,6 @@ import shutil
 import sys
 from datetime import date, datetime, timedelta
 
-from bs4 import BeautifulSoup
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.jobs_db import (  # noqa: E402
@@ -29,7 +27,6 @@ from src.jobs_db import (  # noqa: E402
 )
 
 P = "_api_c2_"
-SUMMARY_MAX_CHARS = 2500
 STATUS_APPLIED = "Applied"
 STATUS_TRACKING = "Tracking"
 
@@ -62,17 +59,6 @@ def _iso_to_date(value: str) -> str:
     if dt.tzinfo:
         dt = dt.astimezone()
     return dt.date().isoformat()
-
-
-def _html_to_text(html: str) -> str:
-    if not html:
-        return ""
-    text = BeautifulSoup(html, "html.parser").get_text("\n", strip=True)
-    lines = [ln.strip() for ln in text.splitlines()]
-    text = "\n".join(ln for ln in lines if ln)
-    if len(text) > SUMMARY_MAX_CHARS:
-        text = text[:SUMMARY_MAX_CHARS].rsplit(" ", 1)[0] + " …"
-    return text
 
 
 def _as_list(value) -> list[str]:
@@ -134,7 +120,11 @@ def parse_record(rec: dict) -> dict:
     return {
         "company": (_get(rec, "company_name") or "").strip(),
         "position_title": (_get(rec, "job_title") or "").strip(),
-        "job_summary": _html_to_text(_get(rec, "job_description") or ""),
+        # Deliberately blank. The export carries a full description per record
+        # (~5KB of HTML each), but it is read rarely enough that looking it up
+        # on demand beats storing ~2,800 of them; backfill_job_fields.py fills a
+        # blank summary from the posting URL when one is wanted.
+        "job_summary": "",
         "location": _location(rec),
         "link": (_get(rec, "job_url") or "").strip(),
         "date_added": _iso_to_date(_get(rec, "datetime_matched", "")),
@@ -195,7 +185,7 @@ def parse_export(records: list[dict], include_unsubmitted: bool = False) -> dict
 # outreach dates and followup logs are work done by hand or by another skill,
 # and an import that flattens them is worse than an import that does nothing.
 EXPORT_WINS = ("location",)
-FILL_IF_BLANK = ("job_summary", "date_applied", "link")
+FILL_IF_BLANK = ("date_applied", "link")
 CURATED = ("contacts", "notes", "outreach_date", "followup_log")
 
 
@@ -203,10 +193,9 @@ def merge_updates(incoming: dict, existing: dict) -> dict:
     """
     The columns an export record may change on the tracker row it matched.
 
-    `job_summary` is fill-if-blank rather than export-wins because the GUI runs
-    refine_summary over it (jobs_gui.py:138) and it is user-editable -- raw
-    export HTML must not overwrite a refined summary. `date_applied` likewise:
-    a date read off a real confirmation email outranks the export's.
+    `date_applied` is fill-if-blank rather than export-wins: a date read off a
+    real confirmation email outranks the export's. `job_summary` is never
+    written at all -- see parse_record.
     """
     updates: dict[str, str] = {}
 

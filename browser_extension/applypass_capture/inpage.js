@@ -196,6 +196,10 @@
       state.wrongTab += 1;
       return;
     }
+    // The importer never reads the description, and it is ~5KB of HTML per
+    // record -- about 13MB of a full 19MB export. Dropped here so the download,
+    // the inbox file and every archived copy stay small.
+    for (const record of found.records) delete record._api_c2_job_description;
     if (found.page === 1 && state.rereading) {
       state.pages[0] = found.records;
     } else {
