@@ -1,11 +1,45 @@
 ---
 name: applypass-inbound
-description: Import an auto-apply service export (ApplyPass-style JSON with `_api_c2_*` fields) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, or asks to import auto-submitted applications.
+description: Import an auto-apply service export (ApplyPass-style JSON with `_api_c2_*` fields) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, asks to import auto-submitted applications, or asks to pull their applied jobs from ApplyPass.
 ---
 
 Import the export sitting in the inbox into the job tracker.
 
 The **inbox** is `data/applied_inbox.json` — a scratch file the user pastes each export into. Everything here runs from the repo root.
+
+If the inbox is empty and Claude-in-Chrome is available, fill it yourself with Step 0.
+
+---
+
+## Step 0 — Capture from ApplyPass in the browser
+
+`browser_extension/applypass_capture/inpage.js` pages through the **Job Applied** list
+inside the ApplyPass tab and downloads one merged export. No DevTools, no clicking
+through pages. It only reads; it never touches the database.
+
+1. Open the user's ApplyPass dashboard in a new tab and wait until the job list and its
+   page-size dropdown have rendered (~20s; the app is slow to boot).
+2. Inject the script: pass the full contents of `inpage.js` to the `javascript_tool`.
+   It installs `window.__applypassCapture` and starts listening. Inject **before**
+   switching tabs so the first page is heard.
+3. Click **Job Applied**. Use a coordinate click from a screenshot: the app ignores
+   element-ref and synthetic clicks while it is still loading, and the dashboard opens on
+   Job Matches, which answers in the same shape.
+4. `__applypassCapture.start()`, then poll `__applypassCapture.status()` until `state` is
+   `done`. Pages take ~8s each. Wait between polls with the `computer` tool's `wait`
+   action, **not** a `setTimeout` inside the page: Chrome throttles timers in a
+   background tab to as little as once a minute, so an in-page 30s sleep can outlive the
+   javascript tool's 45s limit. The same throttling slows the capture itself, so keep
+   the tab in front if you can.
+   - `error` naming **Job Matches**: the tab click did not take. Click Job Applied again
+     (coordinates), wait, `start()` again. Pages it refused are counted in
+     `wrongTabPagesRefused` and never kept.
+   - `stuck`: the app ignored the synthetic click on the next arrow. Click the `›` arrow
+     once by coordinates, then `__applypassCapture.resume()`. It continues from there.
+5. Check `records == totalRecords` and `missing` is empty. `__applypassCapture.download()`
+   saves `applied_inbox_<timestamp>.json` to `~/Downloads` and returns the filename —
+   downloading is a user-visible action, so say what you are saving first.
+6. `mv ~/Downloads/<that filename> data/applied_inbox.json` and close the tab.
 
 ---
 

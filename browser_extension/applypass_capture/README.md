@@ -13,6 +13,18 @@ exports that took on 2026-08-16.
 file in the shape `scripts/parse_applied_jobs.py` already accepts, so the parser stays
 the single implementation of the field mapping and a bug here can't write a bad row.
 
+## Without DevTools: `inpage.js`
+
+An agent driving Chrome can't open DevTools, so `inpage.js` does the same capture from
+inside the page: injected into the ApplyPass tab, it wraps `XMLHttpRequest`/`fetch`,
+sets 100 per page, clicks through every page of **Job Applied**, and downloads the same
+merged file this panel does. The `applypass-inbound` skill's Step 0 drives it.
+
+It refuses pages that aren't from Job Applied (the same endpoint answers for Job
+Matches), picks the next arrow by position because both arrows share a class, and parks
+as `stuck` rather than failing when the app ignores a synthetic click. Its pure helpers
+are covered by `inpage.test.mjs`.
+
 ## Install
 
 1. Open `chrome://extensions`, enable **Developer mode**.
