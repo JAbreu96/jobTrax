@@ -253,6 +253,45 @@ describe("JobsTable editing", () => {
   });
 });
 
+describe("JobsTable incomplete rows", () => {
+  /*
+   * A job with no description cannot be prepared for and cannot be judged from
+   * the list, so the row says so. The flag is computed server-side -- the list
+   * payload deliberately omits job_summary, so there is nothing client-side to
+   * test for emptiness.
+   */
+  const theRow = () => within(document.querySelector("tbody")!).getAllByRole("row")[0];
+
+  it("marks a row whose job has no description", () => {
+    renderTable({ jobs: [job({ missing_description: true })] });
+
+    expect(theRow().className).toMatch(/incomplete/);
+  });
+
+  it("leaves a row with a description unmarked", () => {
+    renderTable({ jobs: [job({ missing_description: false })] });
+
+    expect(theRow().className).not.toMatch(/incomplete/);
+  });
+
+  it("treats an absent flag as nothing to warn about", () => {
+    // A row cached before the flag existed, or one built by a test, carries no
+    // flag at all. Absent must read as "no warning", never as "no description"
+    // -- the other way round paints the whole list amber on a stale cache.
+    renderTable({ jobs: [job()] });
+
+    expect(theRow().className).not.toMatch(/incomplete/);
+  });
+
+  it("says in words what the colour says", () => {
+    // Colour alone is invisible to a screen reader and hard to separate from
+    // the row background for anyone who cannot see amber.
+    renderTable({ jobs: [job({ missing_description: true })] });
+
+    expect(theRow()).toHaveAttribute("title", "No job description saved");
+  });
+});
+
 describe("countLabel", () => {
   it("refuses to quote a total it does not have yet", () => {
     // "50 of 1088" mid-prefetch would be a lie: 1088 is how many have arrived.

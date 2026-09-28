@@ -44,6 +44,21 @@
 .row:hover { background: var(--bg); }
 .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* No description on this job.
+ *
+ * Amber, not red: this is a gap to fill, not a failure. Red is what the
+ * delete control uses, and a row that looks like an error on a third of the
+ * list teaches you to ignore the colour.
+ *
+ * On the first cell rather than the <tr>: a table row does not paint its own
+ * border under `border-collapse`, so a border-left on the <tr> silently does
+ * nothing in most of them. Applying it to the first <td> is what actually
+ * draws. The 3px is absorbed by that cell's padding so no text shifts. */
+.incomplete > td:first-child {
+  border-left: 3px solid #d9a441;
+  padding-left: calc(var(--sp-3) - 3px);
+}
+
 .table td {
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);

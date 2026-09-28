@@ -87,7 +87,17 @@ export function JobsTable({
           {visible.map((job) => (
             <tr
               key={rowKey(job)}
-              className={styles.row}
+              /*
+               * A job with no description is a job you cannot prepare for and
+               * cannot judge from the list. The marker is a left border rather
+               * than a badge or an icon: it costs no column, survives the row
+               * truncating its text, and reads as a margin note on the row
+               * instead of another thing to look at on 1,088 of them.
+               */
+              className={`${styles.row} ${job.missing_description ? styles.incomplete : ""}`}
+              /* The colour alone says nothing to a screen reader, and little
+                 to anyone who cannot separate amber from the row background. */
+              title={job.missing_description ? "No job description saved" : undefined}
               tabIndex={0}
               onClick={() => onOpenJob(job)}
               // Rows are interactive, so they have to be reachable without a

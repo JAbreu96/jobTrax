@@ -69,6 +69,19 @@ def test_jobs_list_still_carries_notes(client):
     assert any(r["notes"] == "applypass auto-applied" for r in rows)
 
 
+def test_jobs_list_flags_missing_description(client):
+    jobs_db.upsert_job({
+        "company": "Soylent", "position_title": "Engineer", "link": "",
+        "date_added": "2026-01-01", "job_summary": "",
+        "notes": "", "status": "Tracking",
+    })
+    rows = client.get("/api/jobs").get_json()
+    by_company = {r["company"]: r for r in rows}
+    assert by_company["Soylent"]["missing_description"] is True
+    assert by_company["Acme"]["missing_description"] is False
+    assert by_company["Globex"]["missing_description"] is False
+
+
 def test_detail_returns_the_summary_the_list_withheld(client):
     data = client.get("/api/jobs/detail", query_string={
         "company": "Acme", "date_added": "2026-01-01",
