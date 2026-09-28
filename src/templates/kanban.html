@@ -74,6 +74,10 @@
   }
   .card:active { cursor: grabbing; }
   .card.dragging { opacity: 0.4; }
+  /* No description saved on this job -- same amber marker the table uses.
+     A card is a div, so unlike the table row this can simply take a
+     border-left; the left padding absorbs the 3px so nothing shifts. */
+  .card.incomplete { border-left: 3px solid #d9a441; padding-left: 9px; }
   .card .company {
     font-weight: 600;
     color: var(--text);
@@ -376,7 +380,12 @@ function render() {
 
 function makeCard(job) {
   const card = document.createElement('div');
-  card.className = 'card';
+  // missing_description rides down with the job on /api/jobs -- computed in
+  // SQL, because job_summary itself is not in the list payload and there is
+  // nothing here to test for emptiness. An absent flag means "no warning",
+  // never "no description".
+  card.className = 'card' + (job.missing_description ? ' incomplete' : '');
+  card.title = job.missing_description ? 'No job description saved' : '';
   card.draggable = true;
   card.dataset.key = rowKey(job);
 

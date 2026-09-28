@@ -82,6 +82,39 @@ def test_jobs_list_flags_missing_description(client):
     assert by_company["Globex"]["missing_description"] is False
 
 
+def test_detail_flags_missing_description_without_fetching_the_summary(client):
+    """?summary=0 is the harder half, and the one a naive fix gets wrong.
+
+    This endpoint builds its column list from what the caller asked for, and
+    summary is opt-*out*: with ?summary=0 the query never reads job_summary at
+    all. The flag is derived from that column, so it has to be computed in SQL
+    beside it rather than from anything Python is holding.
+    """
+    jobs_db.upsert_job({
+        "company": "Soylent", "position_title": "Engineer", "link": "",
+        "date_added": "2026-01-01", "job_summary": "",
+        "notes": "", "status": "Tracking",
+    })
+    key = {"company": "Soylent", "date_added": "2026-01-01",
+           "position_title": "Engineer", "link": ""}
+
+    body = client.get("/api/jobs/detail",
+                      query_string={**key, "job": "1", "summary": "0"}).get_json()
+
+    assert body["job"]["missing_description"] is True
+    # The point of the flag: the text itself never came down.
+    assert "job_summary" not in body
+
+
+def test_detail_does_not_flag_a_job_that_has_a_description(client):
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "job": "1",
+    }).get_json()
+
+    assert body["job"]["missing_description"] is False
+
+
 def test_detail_returns_the_summary_the_list_withheld(client):
     data = client.get("/api/jobs/detail", query_string={
         "company": "Acme", "date_added": "2026-01-01",
