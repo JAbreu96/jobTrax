@@ -76,6 +76,17 @@ export interface Job extends JobKey {
   // Whether the recruiter link came from a mail (inbox-triage), which is what
   // makes it read-only in the UI until the user overrides it.
   recruiter_from_triage: boolean;
+  /*
+   * Whether this job has no description. Computed server-side, because
+   * job_summary itself is deliberately not in the list payload -- shipping
+   * 1,088 descriptions to ask "is it empty" would cost 1.4MB to answer a
+   * question SQL answers for free.
+   *
+   * Optional: a row cached before the flag existed, or one built by a test,
+   * simply does not carry it, and an absent flag must read as "no warning"
+   * rather than as "no description".
+   */
+  missing_description?: boolean;
 }
 
 // GET /api/jobs with no ?limit returns a bare Job[]. GET /api/jobs?limit=N
@@ -89,6 +100,9 @@ export interface JobsPage {
 // ?summary=0 (the client already has it cached), so it's optional here.
 export interface JobDetail {
   prep_items?: PrepItem[];
+  // Rides along on ?company_profile=1 rather than costing its own request: it
+  // is keyed on the employer, which this endpoint already has.
+  company_profile?: CompanyProfile | null;
   interviews: Interview[];
   job_summary?: string;
   // Only when the caller asks for it (?job=1). The table never does -- it is

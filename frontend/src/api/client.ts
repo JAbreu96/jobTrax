@@ -37,8 +37,11 @@ function errorMessage(body: unknown, res: Response): string {
   return `Request failed with status ${res.status} ${res.statusText}`;
 }
 
-export async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+export async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
+  // The signal is optional because almost nothing needs it -- only the jobs
+  // list, whose background prefetch must stop when a newer load supersedes it
+  // rather than keep appending pages to a list nobody is reading any more.
+  const res = await fetch(path, signal ? { signal } : undefined);
   const body = await parseBody(res);
   if (!res.ok) {
     throw new ApiError(errorMessage(body, res), res.status, body);

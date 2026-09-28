@@ -44,7 +44,8 @@
 import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { postJSON, ApiError } from "../api/client";
 import { jobKeyFields, rowKey, type JobKeyInput } from "../lib/jobFields";
-import type { Job, JobKey, JobsPage, JobDetail, Recruiter } from "../api/types";
+import type { Job, JobKey, JobDetail, Recruiter } from "../api/types";
+import type { JobsList } from "./useJobsProgressive";
 
 // ---------------------------------------------------------------------------
 // Cache helpers -- the React replacement for "mutate `job`, then re-render".
@@ -73,7 +74,7 @@ function jobDetailEntries(key: JobKeyInput) {
 }
 
 function patchJobInCaches(queryClient: QueryClient, key: JobKeyInput, patch: Partial<Job>) {
-  queryClient.setQueriesData<JobsPage>({ queryKey: ["jobs"], exact: false }, (page) => {
+  queryClient.setQueriesData<JobsList>({ queryKey: ["jobs"], exact: false }, (page) => {
     if (!page) return page;
     return {
       ...page,
@@ -102,7 +103,7 @@ function patchJobSummaryInDetail(queryClient: QueryClient, key: JobKeyInput, sum
 }
 
 function removeJobFromCaches(queryClient: QueryClient, key: JobKeyInput) {
-  queryClient.setQueriesData<JobsPage>({ queryKey: ["jobs"], exact: false }, (page) => {
+  queryClient.setQueriesData<JobsList>({ queryKey: ["jobs"], exact: false }, (page) => {
     if (!page) return page;
     return { ...page, jobs: page.jobs.filter((j) => rowKey(j) !== rowKey(key)) };
   });

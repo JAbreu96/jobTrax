@@ -69,6 +69,52 @@ def test_jobs_list_still_carries_notes(client):
     assert any(r["notes"] == "applypass auto-applied" for r in rows)
 
 
+def test_jobs_list_flags_missing_description(client):
+    jobs_db.upsert_job({
+        "company": "Soylent", "position_title": "Engineer", "link": "",
+        "date_added": "2026-01-01", "job_summary": "",
+        "notes": "", "status": "Tracking",
+    })
+    rows = client.get("/api/jobs").get_json()
+    by_company = {r["company"]: r for r in rows}
+    assert by_company["Soylent"]["missing_description"] is True
+    assert by_company["Acme"]["missing_description"] is False
+    assert by_company["Globex"]["missing_description"] is False
+
+
+def test_detail_flags_missing_description_without_fetching_the_summary(client):
+    """?summary=0 is the harder half, and the one a naive fix gets wrong.
+
+    This endpoint builds its column list from what the caller asked for, and
+    summary is opt-*out*: with ?summary=0 the query never reads job_summary at
+    all. The flag is derived from that column, so it has to be computed in SQL
+    beside it rather than from anything Python is holding.
+    """
+    jobs_db.upsert_job({
+        "company": "Soylent", "position_title": "Engineer", "link": "",
+        "date_added": "2026-01-01", "job_summary": "",
+        "notes": "", "status": "Tracking",
+    })
+    key = {"company": "Soylent", "date_added": "2026-01-01",
+           "position_title": "Engineer", "link": ""}
+
+    body = client.get("/api/jobs/detail",
+                      query_string={**key, "job": "1", "summary": "0"}).get_json()
+
+    assert body["job"]["missing_description"] is True
+    # The point of the flag: the text itself never came down.
+    assert "job_summary" not in body
+
+
+def test_detail_does_not_flag_a_job_that_has_a_description(client):
+    body = client.get("/api/jobs/detail", query_string={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "job": "1",
+    }).get_json()
+
+    assert body["job"]["missing_description"] is False
+
+
 def test_detail_returns_the_summary_the_list_withheld(client):
     data = client.get("/api/jobs/detail", query_string={
         "company": "Acme", "date_added": "2026-01-01",
@@ -495,25 +541,50 @@ def test_api_config_exposes_the_shared_vocabulary(client):
     assert body["interview_types"] == jobs_db.INTERVIEW_TYPES
 
 
-def test_app_shell_serves_every_client_routed_path(client):
-    """
-    The React app mounts under /app with a matching router basename, and both
-    the bare route and the <path:_rest> catch-all are needed: without the
-    latter a hard refresh on /app/kanban 404s at Flask before React ever runs.
+def _is_app_shell(html):
+    """Whether a response is app_shell.html, built or not.
 
-    Asserting the bundle reference rather than just a 200, because the failure
-    this guards is a shell that renders an empty page -- which is a 200.
+    Looking for the bundle reference alone would make the assertion a property
+    of the machine: src/static/dist/ is gitignored, so on a clone that has
+    never run the build the shell renders its "build this first" page instead
+    -- still the shell, no script tag. Either branch counts; a Jinja view is
+    neither.
     """
-    for path in ("/app", "/app/kanban", "/app/insights"):
+    return 'id="root"' in html or "build-frontend.sh" in html
+
+
+def test_react_serves_every_path_it_routes(client):
+    """
+    Each client-routed path needs its own Flask route. Without one, a hard
+    refresh or a pasted link 404s at Flask before React ever runs -- and /job
+    is exactly the URL that gets pasted, since the job key rides in its query
+    string.
+    """
+    for path in ("/", "/job", "/job?company=Acme"):
         resp = client.get(path)
         assert resp.status_code == 200, path
-        assert "dist/assets/main.js" in resp.get_data(as_text=True), path
+        assert _is_app_shell(resp.get_data(as_text=True)), path
 
 
-def test_app_shell_has_not_taken_over_the_jinja_views(client):
-    """Phase 0 is purely additive: /, /kanban and /insights still render Jinja."""
-    for path in ("/", "/kanban", "/insights"):
-        assert "dist/assets/main.js" not in client.get(path).get_data(as_text=True), path
+def test_the_board_and_insights_are_still_jinja(client):
+    """
+    React must not claim these. They have no route in App.tsx and no shell
+    here; Phases 5 and 7 move them, one at a time.
+    """
+    for path in ("/kanban", "/insights"):
+        html = client.get(path).get_data(as_text=True)
+        assert not _is_app_shell(html), path
+
+
+def test_the_old_app_mount_redirects_instead_of_dying(client):
+    """
+    /app was the staging mount, and links to it exist in PR bodies and browser
+    histories. The query string has to survive: /app/job?company=... is how the
+    job view is deep-linked, and losing it lands on the list with no job open,
+    which reads as the view having lost the row.
+    """
+    assert client.get("/app").headers["Location"] == "/"
+    assert client.get("/app/job?company=Acme").headers["Location"] == "/job?company=Acme"
 
 
 # --- /api/jobs/detail?job=1 -------------------------------------------------
@@ -578,3 +649,39 @@ def test_an_unknown_key_reports_no_row_rather_than_erroring(client):
     }).get_json()
 
     assert body["job"] is None
+
+
+def test_update_404s_when_it_matches_no_row(client):
+    """
+    It used to answer {"ok": true}. A write against a key that had already
+    moved -- a row renamed in another tab, a stale list -- wrote nothing and
+    the client showed the new value anyway, with the only visible symptom a
+    field that reverted on the next reload.
+    """
+    res = client.post("/api/jobs/update", json={
+        "company": "No Such Company", "date_added": "2020-01-01",
+        "position_title": "x", "link": "", "field": "status", "value": "Applied",
+    })
+
+    assert res.status_code == 404
+
+
+def test_update_404s_on_a_stale_key_even_for_a_dating_status(client):
+    """The date_applied branch is a separate UPDATE and needs the same check."""
+    res = client.post("/api/jobs/update", json={
+        "company": "No Such Company", "date_added": "2020-01-01",
+        "position_title": "x", "link": "", "field": "status", "value": "Applied",
+    })
+
+    assert res.status_code == 404
+    assert "renamed or deleted" in res.get_json()["error"]
+
+
+def test_update_still_succeeds_for_a_row_that_exists(client):
+    res = client.post("/api/jobs/update", json={
+        "company": "Acme", "date_added": "2026-01-01",
+        "position_title": "Engineer", "link": "", "field": "notes", "value": "hello",
+    })
+
+    assert res.status_code == 200
+    assert res.get_json()["ok"] is True

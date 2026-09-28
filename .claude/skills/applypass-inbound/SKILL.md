@@ -1,11 +1,60 @@
 ---
 name: applypass-inbound
-description: Import an auto-apply service export (ApplyPass-style JSON with `_api_c2_*` fields) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, or asks to import auto-submitted applications.
+description: Import an auto-apply service export (ApplyPass-style JSON with `_api_c2_*` fields) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, asks to import auto-submitted applications, or asks to pull their applied jobs from ApplyPass.
 ---
 
 Import the export sitting in the inbox into the job tracker.
 
 The **inbox** is `data/applied_inbox.json` — a scratch file the user pastes each export into. Everything here runs from the repo root.
+
+If the inbox is empty and Claude-in-Chrome is available, fill it yourself with Step 0.
+
+---
+
+## Step 0 — Capture from ApplyPass in the browser
+
+`browser_extension/applypass_capture/inpage.js` pages through the **Job Applied** list
+inside the ApplyPass tab and downloads one merged export. No DevTools, no clicking
+through pages. It only reads; it never touches the database.
+
+1. Open the user's ApplyPass dashboard in a new tab and wait until the job list and its
+   page-size dropdown have rendered (~20s; the app is slow to boot).
+2. Inject the script: pass the full contents of `inpage.js` to the `javascript_tool`.
+   It installs `window.__applypassCapture` and starts listening. Inject **before**
+   switching tabs so the first page is heard.
+3. Click **Job Applied**. Use a coordinate click from a screenshot: the app ignores
+   element-ref and synthetic clicks while it is still loading, and the dashboard opens on
+   Job Matches, which answers in the same shape.
+4. Get the cutoff, then start:
+
+   ```bash
+   python scripts/parse_applied_jobs.py --cutoff
+   ```
+
+   It prints the newest auto-applied `date_applied` in the tracker less two days, e.g.
+   `2026-09-26`. Start with `__applypassCapture.start({stopBefore: "2026-09-26"})`: the
+   list is newest-first, so paging stops at the first page holding an older submission
+   and a weekly run is a handful of pages instead of all of them. It prints nothing
+   when no export has been imported yet; then call `start()` with no cutoff.
+
+   Poll `__applypassCapture.status()` until `state` is `done`. Pages take ~8s each. Wait between polls with the `computer` tool's `wait`
+   action, **not** a `setTimeout` inside the page: Chrome throttles timers in a
+   background tab to as little as once a minute, so an in-page 30s sleep can outlive the
+   javascript tool's 45s limit. The same throttling slows the capture itself, so keep
+   the tab in front if you can.
+   - `error` naming **Job Matches**: the tab click did not take. Click Job Applied again
+     (coordinates), wait, `start()` again. Pages it refused are counted in
+     `wrongTabPagesRefused` and never kept.
+   - `stuck`: the app ignored the synthetic click on the next arrow. Click the `›` arrow
+     once by coordinates, then `__applypassCapture.resume()`. It continues from there.
+5. Check `missing` is empty. A full run should also have `records == totalRecords`; an
+   incremental one stops early by design, so check `stoppedAt` is set instead — if it
+   is null the cutoff was never reached and the whole list was paged, which is correct
+   but means the tracker was further behind than the cutoff suggested.
+   `__applypassCapture.download()`
+   saves `applied_inbox_<timestamp>.json` to `~/Downloads` and returns the filename —
+   downloading is a user-visible action, so say what you are saving first.
+6. `mv ~/Downloads/<that filename> data/applied_inbox.json` and close the tab.
 
 ---
 
@@ -35,21 +84,22 @@ so a glob can pick up a stale file. Everything below is unchanged either way.
 
 ## Step 2 — Preview
 
-Every command from here on must load `.env` first:
-
 ```bash
 set -a; source .env; set +a
 python scripts/parse_applied_jobs.py
 ```
 
-**Do not skip the `source`.** Neither `parse_applied_jobs.py` nor `src/jobs_db.py`
-calls `load_dotenv()`, so from a plain shell `TURSO_DATABASE_URL` is unset,
-`_use_libsql()` returns False, and the importer writes `data/jobs.db` instead of
-Turso — a file the GUI no longer reads. The rows land, every count reconciles,
-and the jobs are invisible. This has already happened once: 101 rows went to the
-local file and had to be re-imported from the archive.
+`src/jobs_db.py` loads `.env` itself, by absolute path, so the importer reaches
+Turso from any shell. The `source` line is still here because the backup and
+verification snippets below open `libsql` directly and read
+`TURSO_DATABASE_URL` from the environment; keep it on every command so they all
+agree. It does not override a variable you have set on purpose — `jobs_db` uses
+`override=False`, and an *empty* `TURSO_DATABASE_URL` is what keeps you on a
+local copy.
 
 The script prints which database it wrote to. Read that line; do not assume it.
+Before this was fixed, 101 rows once landed in `data/jobs.db`, a file nothing
+reads, and every count still reconciled.
 
 Dry run — writes nothing. It prints every row as NEW or DUP, plus within-file duplicates collapsed and records skipped.
 
@@ -187,6 +237,40 @@ State:
 
 ---
 
+## Unattended runs
+
+`scripts/run-applypass-inbound.sh` runs this skill daily at 09:30 with nobody watching.
+Its prompt pre-authorizes the download and the `--write --clear` import. Nothing else
+is authorized. Steps 0–6 apply unchanged, with these rules on top, because no one is
+there to ask:
+
+- **Start from an empty inbox.** If `data/applied_inbox.json` is not `[]`, an earlier run
+  stopped partway. Stop without touching it — someone has to look at what is in it.
+- **Always incremental.** Use `--cutoff`, or no cutoff when it prints nothing.
+- **Touch only three controls.** On the ApplyPass page, click only the Job Applied tab,
+  the page-size dropdown and the pager arrows. Never click like/dislike, **Pause
+  Applying**, Edit Profile, or anything that changes the account.
+- **Never sign in.** If the page shows a login screen, the session has expired: stop.
+  Credentials are the user's to enter.
+- **Bounded recovery.** Allow one Job Matches retry and two `stuck` recoveries, each a
+  single coordinate click. After that, stop without downloading.
+- **Download only a complete capture.** `state` is `done` and `missing` is empty.
+- **Close the tab** whether the run succeeded or not.
+- **A row delta that does not match the NEW count** (Step 5) is still reported, as a
+  stop. The write has happened by then, but the mismatch needs a person.
+
+End with exactly one line the runner reads:
+
+```
+RESULT: imported <n> new, <m> updated
+RESULT: stopped: <one-line reason>
+```
+
+The runner raises a macOS notification on any stop or failure. A clean import stays
+silent.
+
+---
+
 ## Field mapping
 
 `scripts/parse_applied_jobs.py` owns this; it is recorded here only where the choice is not obvious from the code.
@@ -196,7 +280,7 @@ State:
 | `date_added` | `datetime_matched` | when the service matched the job, not when it applied |
 | `date_applied` | `application_submitted_date` | |
 | `status` | — | `Applied` when submitted, else `Tracking` |
-| `job_summary` | `job_description` | HTML stripped to text, capped at 2500 chars |
+| `job_summary` | — | never imported; left blank. Look a posting up on demand, or fill blanks with `scripts/backfill_job_fields.py` |
 | `location` | `location_name` + `location_type` | `California (On-site)` |
 | `notes` | — | provenance, the export's own match score, seniority, board, source IDs |
 
@@ -211,7 +295,7 @@ Records are dropped when `_api_c2_is_invalid` is set, when `company_name` is bla
 | Flag | Effect |
 |---|---|
 | *(none)* | dry-run preview |
-| `--write` | upsert new rows into the tracker DB — Turso when `.env` is sourced, `data/jobs.db` otherwise |
+| `--write` | upsert new rows into the tracker DB — Turso when `TURSO_DATABASE_URL` is set (`.env` sets it), `data/jobs.db` when it is empty |
 | `--clear` | with `--write`: archive the inbox, then empty it |
 | `--all` | include records whose application was never submitted (they land as `Tracking`) |
 | `--skip-existing` | do not merge into rows already in the tracker; report and ignore them |

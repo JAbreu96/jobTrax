@@ -1,0 +1,58 @@
+.page {
+  width: min(1180px, calc(100vw - 48px));
+  margin: var(--sp-6) auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.state {
+  width: min(1180px, calc(100vw - 48px));
+  margin: var(--sp-8) auto;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 1000px) {
+  .page { width: calc(100vw - 24px); margin: var(--sp-3) auto; }
+}
+
+.empty {
+  margin: 0;
+  padding: var(--sp-8) var(--sp-4);
+  text-align: center;
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-3) 0;
+}
+
+/* Mirrors .goal-badge / .goal-badge.goal-met in static/job_views.css, which
+   the Jinja header uses. Restated here rather than reused: that file's rules
+   are global selectors and this element carries a hashed CSS-module class, so
+   they would not match it. */
+.goal { color: var(--muted); font-size: var(--fs-tab); }
+.goalMet { color: #2e9e4f; font-weight: 600; font-size: var(--fs-tab); }
+
+.linkish {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--fs-tab);
+  text-decoration: none;
+}
+.linkish:hover { text-decoration: underline; }
+
+.primary {
+  font: inherit;
+  font-size: var(--fs-tab);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}

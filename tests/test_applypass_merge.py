@@ -192,17 +192,64 @@ def test_two_blank_link_rows_sharing_a_title_are_refused_not_guessed(db, paj):
     assert groups["updates"] == []
 
 
-def test_a_refined_summary_is_kept_but_a_blank_one_is_filled(db, paj):
+def test_the_export_description_is_never_imported(db, paj):
     """
-    The GUI runs refine_summary over job_summary and the column is user
-    editable, so raw export HTML must not overwrite it -- but an empty summary
-    is worth filling.
+    Descriptions are looked up on demand, not stored: a new row lands with a
+    blank summary, and a matched row's summary -- blank or hand-refined -- is
+    left exactly as it was.
     """
-    _job(db, summary="Hand-refined: senior backend, Go, remote.", link="https://x/1")
-    _, _, updates = _classify(paj, [_rec(link="https://x/1")])["updates"][0]
-    assert "job_summary" not in updates
+    rows = paj.parse_export([_rec(company="Initech", link="https://x/9",
+                                  description="<p>A long posting.</p>")])["rows"]
+    assert rows[0]["job_summary"] == ""
 
+    _job(db, summary="Hand-refined: senior backend, Go, remote.", link="https://x/1")
     _job(db, company="Globex", summary="", link="https://x/2")
-    groups = _classify(paj, [_rec(company="Globex", link="https://x/2")])
-    _, _, updates = next((u for u in groups["updates"] if u[1]["company"] == "Globex"), None)
-    assert updates["job_summary"]
+    groups = _classify(paj, [_rec(link="https://x/1"), _rec(company="Globex", link="https://x/2")])
+    for _row, _match, updates in groups["updates"] + groups["unchanged"]:
+        assert "job_summary" not in updates
+
+
+# --- incremental cutoff ------------------------------------------------------
+
+AUTO_NOTE = "Imported from auto-apply export (auto-submitted application)."
+
+
+def test_cutoff_is_the_newest_auto_applied_date_less_the_buffer(paj):
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-20"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-28"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-01"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-26"
+    assert paj.incremental_cutoff(jobs, buffer_days=0) == "2026-09-28"
+
+
+def test_cutoff_ignores_jobs_applied_to_by_hand(paj):
+    # A manual application yesterday says nothing about how far the export has
+    # been imported; letting it set the cutoff would skip older export records.
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-10"},
+        {"notes": "Referred by a friend", "date_applied": "2026-09-27"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-08"
+
+
+def test_cutoff_is_empty_before_the_first_import(paj):
+    assert paj.incremental_cutoff([]) == ""
+    assert paj.incremental_cutoff([{"notes": "manual", "date_applied": "2026-09-27"}]) == ""
+
+
+def test_cutoff_skips_unparseable_dates(paj):
+    jobs = [
+        {"notes": AUTO_NOTE, "date_applied": ""},
+        {"notes": AUTO_NOTE, "date_applied": "sometime"},
+        {"notes": AUTO_NOTE, "date_applied": "2026-09-15T10:00:00"},
+    ]
+    assert paj.incremental_cutoff(jobs) == "2026-09-13"
+
+
+def test_cutoff_flag_reads_the_tracker(db, paj, capsys, monkeypatch):
+    _job(db, "Acme", notes=AUTO_NOTE, applied="2026-09-20")
+    monkeypatch.setattr("sys.argv", ["parse_applied_jobs.py", "--cutoff"])
+    assert paj.main() == 0
+    assert capsys.readouterr().out.strip() == "2026-09-18"

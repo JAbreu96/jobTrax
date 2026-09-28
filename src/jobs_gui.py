@@ -149,12 +149,6 @@ def _compress(response):
     return response
 
 
-@app.route("/")
-def index():
-    return render_template("jobs.html", status_values=STATUS_VALUES,
-                           interview_types=INTERVIEW_TYPES)
-
-
 @app.route("/kanban")
 def kanban():
     # interview_types is new here: the board's modal can log rounds now, which
@@ -167,8 +161,9 @@ def _bundle_asset_exists(name: str) -> bool:
     """Whether `npm run build` has emitted src/static/dist/assets/<name>.
 
     src/static/dist/ is gitignored, so on a fresh clone it is simply absent
-    and /app would otherwise serve a <script> tag pointing at a 404 -- a blank
-    page with the reason only visible in devtools. Checked per request rather
+    and the shell would otherwise serve a <script> tag pointing at a 404 -- a
+    blank page with the reason only visible in devtools. Checked per request
+    rather
     than cached at import: the dev loop is "edit, rebuild, refresh", and a
     cached miss would survive the rebuild and keep claiming the bundle is
     missing until Flask restarted.
@@ -176,29 +171,38 @@ def _bundle_asset_exists(name: str) -> bool:
     return os.path.isfile(os.path.join(app.static_folder, "dist", "assets", name))
 
 
-# Staging mount for the React rewrite (frontend/). Phase 0 only -- it does not
-# replace "/", "/kanban" or "/insights" yet, which still serve the Jinja
-# templates above. Both routes are needed so a hard refresh on a client-routed
-# path under /app (e.g. /app/kanban) doesn't 404 at Flask. This whole mount,
-# and the matching `basename="/app"` on the React router, is temporary and is
-# expected to be removed route-by-route in Phases 4, 5 and 7 as each view is
-# cut over for real; once all three are cut over, basename goes away entirely.
-@app.route("/app")
-@app.route("/app/<path:_rest>")
-def app_shell(_rest=None):
+# The React app now serves the job list for real. Every path React routes
+# needs its own Flask route: a hard refresh on /job has to reach the shell
+# rather than 404 at Flask before React ever runs. /kanban and /insights are
+# deliberately absent -- they still render the Jinja templates above, and
+# Phases 5 and 7 move them here one at a time.
+@app.route("/")
+@app.route("/job")
+def app_shell():
     return render_template(
         "app_shell.html",
         bundle_built=_bundle_asset_exists("main.js"),
-        # Vite emits a stylesheet only once something in the entry graph
-        # imports CSS. Phase 0's App.tsx imported none, and the field
-        # components landed on this rung are not mounted yet, so main.css
-        # genuinely does not exist here -- linking it unconditionally would
-        # serve a 404 on every load. Asking the filesystem rather than
-        # hard-coding either answer means the link appears on its own the
-        # moment a later phase renders a component that imports a module, so
-        # nobody has to remember to come back and add it.
+        # A build emits main.css now -- the mounted components import CSS
+        # modules -- but this stays a filesystem check for the same reason the
+        # script tag is one: on an unbuilt clone neither file exists, and a
+        # <link> at a missing stylesheet is a 404 on every load.
         bundle_css=_bundle_asset_exists("main.css"),
     )
+
+
+# /app was the staging mount while the Jinja table still owned "/". It is kept
+# as a redirect rather than deleted: it is what every link written during the
+# rewrite points at, including ones sitting in this repo's PR bodies and in
+# the browser history of the person using it. The query string rides along --
+# /app/job?company=... is exactly the shape the job view is deep-linked with,
+# and dropping it would land on the list with no job selected, which looks
+# like the view losing data rather than a link being rewritten.
+@app.route("/app")
+@app.route("/app/<path:rest>")
+def app_legacy_mount(rest=""):
+    target = "/" + rest
+    query = request.query_string.decode()
+    return redirect(f"{target}?{query}" if query else target)
 
 
 # The list is ordered by date_added DESC, and date_added is not unique, so a
@@ -261,6 +265,18 @@ def _with_recruiter(row: dict, linked=None) -> dict:
     return row
 
 
+# Raw SQL fragment, not a Python-side check: job_summary is deliberately left
+# out of every list-shaped query (see LIST_COLUMNS), so the emptiness check has
+# to happen in SQL, at the same place job_summary itself would have been read.
+_MISSING_DESCRIPTION_SQL = "(job_summary IS NULL OR TRIM(job_summary) = '') AS missing_description"
+
+
+def _coerce_missing_description(row: dict) -> dict:
+    """SQLite hands back 0/1 for the computed column; the wire format is a bool."""
+    row["missing_description"] = bool(row.get("missing_description"))
+    return row
+
+
 @app.route("/api/jobs")
 def api_jobs():
     """
@@ -301,7 +317,10 @@ def api_jobs():
     # Named columns, not SELECT *: dropping job_summary here takes the payload
     # from 2.1MB to 0.68MB and the query from 230ms to 152ms. Trimming in Python
     # instead would still drag the column across the wire from Turso.
-    query = f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs"
+    # missing_description is a computed flag, not job_summary itself -- the row
+    # needs to know whether it has a description to render the incomplete-row
+    # hint, without paying to ship the description text across the wire.
+    query = f"SELECT {', '.join(LIST_COLUMNS)}, {_MISSING_DESCRIPTION_SQL} FROM jobs"
     where, params = [], []
     if not include_archived:
         where.append("archived = 0")
@@ -339,7 +358,7 @@ def api_jobs():
     # runs for every job rendered, and the table is tens of rows against a
     # thousand jobs.
     linked = get_job_recruiters()
-    out = [_with_recruiter(dict(r), linked) for r in rows]
+    out = [_with_recruiter(_coerce_missing_description(dict(r)), linked) for r in rows]
 
     if limit is None:
         return jsonify(out)
@@ -368,35 +387,60 @@ def api_job_detail():
     if not key["company"]:
         return jsonify({"error": "company is required"}), 400
 
-    payload = {"interviews": get_interviews(**key)}
-    if request.args.get("summary") not in ("0", "false", "no"):
-        row = get_db().execute(
-            "SELECT job_summary FROM jobs WHERE company = ? AND date_added = ? "
-            "AND position_title = ? AND link = ?",
-            (key["company"], key["date_added"], key["position_title"], key["link"]),
-        ).fetchone()
-        payload["job_summary"] = (row["job_summary"] if row else "") or ""
-
+    want_summary = request.args.get("summary") not in ("0", "false", "no")
     # ?job=1 adds the row itself. The table never needs it -- it is expanding a
     # row it already holds -- but the job view at /app is reached by a full page
     # load out of that table, so it starts with an empty cache and no way to ask
-    # for one row. Without this it had to pull the whole list to find it: 1.5MB
-    # and ~1.2s, measured, on every single open, to render fifteen fields.
-    #
-    # Opt-in rather than always-on, so the table's expand does not start
-    # carrying a payload it would throw away.
-    if request.args.get("job") in ("1", "true", "yes"):
+    # for one row. Opt-in rather than always-on, so the table's expand does not
+    # start carrying a payload it would throw away.
+    want_job = request.args.get("job") in ("1", "true", "yes")
+    want_prep = request.args.get("prep") in ("1", "true", "yes")
+    want_company = request.args.get("company_profile") in ("1", "true", "yes")
+
+    payload = {"interviews": get_interviews(**key)}
+
+    # One SELECT for both, where there used to be two. They read the same row by
+    # the same key, and against Turso each statement is a network round trip --
+    # measured at 334ms and 382ms for the two halves of one row, where the row
+    # itself costs nothing to find. Every query on this endpoint is latency, so
+    # the only lever that moves is how many there are.
+    columns = []
+    if want_summary:
+        columns.append("job_summary")
+    if want_job:
+        columns.extend(LIST_COLUMNS)
+        # Computed in SQL beside the columns it is derived from, not in Python:
+        # job_summary is deliberately absent from LIST_COLUMNS, so there is
+        # nothing on this side to test for emptiness. ?summary=1 does fetch the
+        # text, but ?job=1 alone does not, and the flag has to be right either
+        # way.
+        columns.append(_MISSING_DESCRIPTION_SQL)
+    if columns:
         row = get_db().execute(
-            f"SELECT {', '.join(LIST_COLUMNS)} FROM jobs WHERE company = ? "
+            f"SELECT {', '.join(columns)} FROM jobs WHERE company = ? "
             "AND date_added = ? AND position_title = ? AND link = ?",
             (key["company"], key["date_added"], key["position_title"], key["link"]),
         ).fetchone()
-        payload["job"] = _with_recruiter(dict(row)) if row else None
+        if want_summary:
+            payload["job_summary"] = ((row["job_summary"] if row else "") or "")
+        if want_job:
+            payload["job"] = _with_recruiter(_coerce_missing_description({
+                **{c: row[c] for c in LIST_COLUMNS},
+                "missing_description": row["missing_description"],
+            })) if row else None
 
-    # Same opt-in shape as ?job=1 above, and for the same reason: the table's
-    # expand has no prep checklist to show and should not pay for one.
-    if request.args.get("prep") in ("1", "true", "yes"):
+    # Same opt-in shape, and for the same reason: the table's expand has no
+    # prep checklist to show and should not pay for one.
+    if want_prep:
         payload["prep_items"] = get_prep_items(**key)
+
+    # The company profile rides along rather than costing its own request. It is
+    # keyed on the employer, which this endpoint already has, and the job view
+    # needs both on every open -- a second HTTP round trip to fetch one row by a
+    # key we are holding was 471ms of the ~5.2s that open cost.
+    if want_company:
+        payload["company_profile"] = get_company_profile(key["company"])
+
     return jsonify(payload)
 
 
@@ -564,6 +608,7 @@ def api_update_job():
                 "error": f"A job for '{value}' on {date_added} already exists."
             }), 409
 
+    matched = 0
     date_applied_value = None
     if field == "status" and value in APPLIED_STATUSES:
         row = db.execute(
@@ -576,18 +621,20 @@ def api_update_job():
 
     try:
         if date_applied_value is not None:
-            db.execute(
+            cur = db.execute(
                 "UPDATE jobs SET status = ?, date_applied = ? WHERE company = ? "
                 "AND date_added = ? AND position_title = ? AND link = ?",
                 (value, date_applied_value, company, date_added,
                  position_title or "", row_link or ""),
             )
+            matched = cur.rowcount
         else:
-            db.execute(
+            cur = db.execute(
                 f"UPDATE jobs SET {field} = ? WHERE company = ? AND date_added = ? "
                 f"AND position_title = ? AND link = ?",
                 (value, company, date_added, position_title or "", row_link or ""),
             )
+            matched = cur.rowcount
         if field == "company" and value != company:
             _carry_children(db, company, value, date_added,
                             position_title or "", row_link or "")
@@ -597,6 +644,13 @@ def api_update_job():
         return jsonify({
             "error": f"A job for '{value}' on {date_added} already exists."
         }), 409
+
+    # An UPDATE that matched nothing used to answer {"ok": true}, so a write
+    # against a key that had already moved -- a row renamed in another tab, a
+    # stale list -- wrote nothing and the client showed the new value anyway.
+    # The only visible symptom was a field that reverted on the next reload.
+    if not matched:
+        return jsonify({"error": "Job not found — it may have been renamed or deleted."}), 404
 
     result = {"ok": True}
     if date_applied_value is not None:
