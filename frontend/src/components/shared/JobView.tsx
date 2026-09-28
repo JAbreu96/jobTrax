@@ -64,6 +64,17 @@ export interface JobViewProps {
     field: CompanySection | "website", value: string,
   ) => void | Promise<unknown>;
   onDelete: () => void | Promise<unknown>;
+  /**
+   * "page" is the standalone route: a centred card with its own width and
+   * margins. "drawer" fills the panel it is handed instead -- no width of its
+   * own, no margin, no outer border, since the panel already draws one.
+   *
+   * This switches the *outer* box only. The internal layout (whether the rail
+   * sits beside the content or above it) is not a prop and must not become
+   * one: it responds to the width this ends up with, through a container
+   * query. See the module CSS.
+   */
+  layout?: "page" | "drawer";
   onClose?: () => void;
   /** Fires on every tab change, so the page can defer a fetch until the tab
    *  that needs it is actually opened. */
@@ -76,6 +87,7 @@ export function JobView({
   job, rounds, interviewTypes, recruiters,
   onSaveField, setRecruiter, createRecruiter,
   onAddInterview, onDeleteInterview, onDelete, onClose, onTabChange,
+  layout = "page",
   companyProfile = null, companyLoading, onSaveCompanySection,
   prepItems = [], onAddPrepItem, onSetPrepDone, onEditPrepItem, onDeletePrepItem,
   confirm = defaultConfirm, notify = defaultNotify,
@@ -107,7 +119,7 @@ export function JobView({
   const save = (field: string) => (value: string) => { void onSaveField(field, value); };
 
   return (
-    <article className={styles.view}>
+    <article className={`${styles.view} ${layout === "drawer" ? styles.inDrawer : ""}`}>
       <header className={styles.header}>
         <div className={styles.identity}>
           <h1 className={styles.title}>{job.position_title || "Untitled role"}</h1>
@@ -162,9 +174,12 @@ export function JobView({
             </div>
             <section className={styles.section}>
               <h3 className={styles.sectionHeading}>Job description</h3>
-              {/* expandable={false}: unclamped. The 4.2em clamp existed because
+              {/* expandable={false}: unclamped, and no inner scroll region
+                  either -- the description runs to its full height and the
+                  view scrolls as one thing. The 4.2em clamp existed because
                   the panel lived in a table row and could not push the table
-                  around. It has its own scroll region now. */}
+                  around; nothing here is boxed in like that. Still markdown:
+                  MarkdownField renders it, this only stops truncating it. */}
               <div className={styles.description}>
                 <MarkdownField label="" value={job.job_summary || ""}
                                expandable={false} fieldClass={styles.prose}
