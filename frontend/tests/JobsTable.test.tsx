@@ -260,35 +260,46 @@ describe("JobsTable incomplete rows", () => {
    * payload deliberately omits job_summary, so there is nothing client-side to
    * test for emptiness.
    */
-  const theRow = () => within(document.querySelector("tbody")!).getAllByRole("row")[0];
+  const badge = () => screen.queryByText("Incomplete");
 
-  it("marks a row whose job has no description", () => {
+  it("badges a row whose job has no description", () => {
     renderTable({ jobs: [job({ missing_description: true })] });
 
-    expect(theRow().className).toMatch(/incomplete/);
+    expect(badge()).toBeInTheDocument();
   });
 
-  it("leaves a row with a description unmarked", () => {
+  it("leaves a row with a description unbadged", () => {
     renderTable({ jobs: [job({ missing_description: false })] });
 
-    expect(theRow().className).not.toMatch(/incomplete/);
+    expect(badge()).toBeNull();
   });
 
   it("treats an absent flag as nothing to warn about", () => {
     // A row cached before the flag existed, or one built by a test, carries no
     // flag at all. Absent must read as "no warning", never as "no description"
-    // -- the other way round paints the whole list amber on a stale cache.
+    // -- the other way round badges the whole list on a stale cache.
     renderTable({ jobs: [job()] });
 
-    expect(theRow().className).not.toMatch(/incomplete/);
+    expect(badge()).toBeNull();
   });
 
-  it("says in words what the colour says", () => {
-    // Colour alone is invisible to a screen reader and hard to separate from
-    // the row background for anyone who cannot see amber.
+  it("spells out what the badge is about", () => {
+    // "Incomplete" alone is ambiguous on a job tracker -- incomplete
+    // application? incomplete profile? The title says which.
     renderTable({ jobs: [job({ missing_description: true })] });
 
-    expect(theRow()).toHaveAttribute("title", "No job description saved");
+    expect(badge()).toHaveAttribute("title", "No job description saved");
+  });
+
+  it("keeps the badge out of the title's truncation", () => {
+    // The badge shares a cell with the position title, which elides when long.
+    // A half-elided "Incomp…" would be worse than no badge at all.
+    renderTable({ jobs: [job({
+      position_title: "Senior Staff Software Engineer, Platform Infrastructure",
+      missing_description: true,
+    })] });
+
+    expect(badge()).toHaveTextContent("Incomplete");
   });
 });
 

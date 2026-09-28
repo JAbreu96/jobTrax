@@ -74,10 +74,24 @@
   }
   .card:active { cursor: grabbing; }
   .card.dragging { opacity: 0.4; }
-  /* No description saved on this job -- same amber marker the table uses.
-     A card is a div, so unlike the table row this can simply take a
-     border-left; the left padding absorbs the 3px so nothing shifts. */
-  .card.incomplete { border-left: 3px solid #d9a441; padding-left: 9px; }
+  /* No description saved on this job -- the same amber badge the table uses.
+     Shaped like .recruiter-pill above so the two read as the same kind of
+     annotation; amber rather than accent because it is a gap, not a fact
+     about the job. */
+  .incomplete-pill {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    background: var(--card);
+    border: 1px solid #d9a441;
+    color: #d9a441;
+    border-radius: 999px;
+    padding: 1px 8px;
+    margin-top: 2px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
   .card .company {
     font-weight: 600;
     color: var(--text);
@@ -380,12 +394,7 @@ function render() {
 
 function makeCard(job) {
   const card = document.createElement('div');
-  // missing_description rides down with the job on /api/jobs -- computed in
-  // SQL, because job_summary itself is not in the list payload and there is
-  // nothing here to test for emptiness. An absent flag means "no warning",
-  // never "no description".
-  card.className = 'card' + (job.missing_description ? ' incomplete' : '');
-  card.title = job.missing_description ? 'No job description saved' : '';
+  card.className = 'card';
   card.draggable = true;
   card.dataset.key = rowKey(job);
 
@@ -406,6 +415,18 @@ function makeCard(job) {
 
   const pill = JobFields.recruiterBadge(job);
   if (pill) card.appendChild(pill);
+
+  // missing_description rides down with the job on /api/jobs -- computed in
+  // SQL, because job_summary itself is not in the list payload and there is
+  // nothing here to test for emptiness. An absent flag means "no warning",
+  // never "no description".
+  if (job.missing_description) {
+    const incomplete = document.createElement('span');
+    incomplete.className = 'incomplete-pill';
+    incomplete.textContent = 'Incomplete';
+    incomplete.title = 'No job description saved';
+    card.appendChild(incomplete);
+  }
 
   const meta = document.createElement('div');
   meta.className = 'meta';

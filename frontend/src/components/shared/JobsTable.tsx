@@ -87,17 +87,7 @@ export function JobsTable({
           {visible.map((job) => (
             <tr
               key={rowKey(job)}
-              /*
-               * A job with no description is a job you cannot prepare for and
-               * cannot judge from the list. The marker is a left border rather
-               * than a badge or an icon: it costs no column, survives the row
-               * truncating its text, and reads as a margin note on the row
-               * instead of another thing to look at on 1,088 of them.
-               */
-              className={`${styles.row} ${job.missing_description ? styles.incomplete : ""}`}
-              /* The colour alone says nothing to a screen reader, and little
-                 to anyone who cannot separate amber from the row background. */
-              title={job.missing_description ? "No job description saved" : undefined}
+              className={styles.row}
               tabIndex={0}
               onClick={() => onOpenJob(job)}
               // Rows are interactive, so they have to be reachable without a
@@ -113,7 +103,23 @@ export function JobsTable({
               <td className={styles.company}>
                 <CompanyCell job={job} onSave={onSaveField} />
               </td>
-              <td>{job.position_title}</td>
+              <td>
+               <div className={styles.titleCell}>
+                <span className={styles.titleText}>{job.position_title}</span>
+                {/*
+                  * A job with no description cannot be prepared for and cannot
+                  * be judged from the list. This said it with a left border
+                  * first; a word is legible where a stripe of colour has to be
+                  * learned, and it says the same thing to a screen reader.
+                  */}
+                {job.missing_description && (
+                  <span className={styles.incompleteBadge}
+                        title="No job description saved">
+                    Incomplete
+                  </span>
+                )}
+               </div>
+              </td>
               <td className={styles.muted}>{job.location || "—"}</td>
               <td className={styles.muted}>{job.date_added}</td>
               <td>
