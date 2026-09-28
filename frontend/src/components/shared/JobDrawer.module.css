@@ -1,11 +1,17 @@
 /*
  * The drawer: a panel pinned to the right edge, over a dimmed list.
  *
- * 720px wide, which is the number the rest of the view was already built for:
- * JobView's rail is 340px and its prose measure is 72ch, so 720 minus the
- * padding leaves the content column at roughly that measure with the rail
- * beside it. Wider and the list behind stops being usable as context; narrower
- * and the rail has to stack, which is what the container query handles.
+ * 80% of the window. The first cut was 720px, chosen so the list behind stayed
+ * usable as context -- but 720 is under the width at which JobView can put its
+ * 340px status rail beside the content, so the rail stacked on top and pushed
+ * the job's own details below the fold. Reading the job is what the drawer is
+ * for; seeing the list behind it is not. 80% clears that threshold on any
+ * normal window and still leaves the list visible down the left edge.
+ *
+ * The cap is 1180px, which is exactly where the standalone page route tops
+ * out. Past a ~1475px window, an uncapped 80% would make the drawer the
+ * roomier of the two -- "open full page" would then give you less room than
+ * the thing you opened it from.
  */
 
 .scrim {
@@ -19,7 +25,7 @@
 }
 
 .panel {
-  width: min(720px, 100vw);
+  width: min(80vw, 1180px);
   height: 100%;
   display: flex;
   flex-direction: column;

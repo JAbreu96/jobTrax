@@ -195,13 +195,20 @@
 
 /* --- narrow ----------------------------------------------------------------
    One breakpoint, asked of the view's own width rather than the window's, so
-   the drawer gets the stacked layout at 720px while the page keeps the rail
-   beside the content at 1180px on that same screen.
+   the same view can stack in a narrow box and not in a wide one on the same
+   screen.
+
+   900px, not the 1000 this started at. The arithmetic: 340px rail + 32px gap
+   + 48px padding leaves 480px of content column at 900, which is a readable
+   measure. Setting it higher made the drawer stack at widths where it plainly
+   had room to do otherwise -- the rail landing on top and pushing the job's
+   own details below the fold, which is the complaint this breakpoint exists
+   to prevent rather than cause.
 
    The rail goes above the panel rather than below it: where the job stands is
    the first thing you want when the two cannot sit side by side, and it is
    the block that was asked to stay pinned. */
-@container jobview (max-width: 1000px) {
+@container jobview (max-width: 900px) {
   .body { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
   .body > :last-child { order: -1; }
   .header { flex-wrap: wrap; padding: var(--sp-4); }
