@@ -35,21 +35,22 @@ so a glob can pick up a stale file. Everything below is unchanged either way.
 
 ## Step 2 — Preview
 
-Every command from here on must load `.env` first:
-
 ```bash
 set -a; source .env; set +a
 python scripts/parse_applied_jobs.py
 ```
 
-**Do not skip the `source`.** Neither `parse_applied_jobs.py` nor `src/jobs_db.py`
-calls `load_dotenv()`, so from a plain shell `TURSO_DATABASE_URL` is unset,
-`_use_libsql()` returns False, and the importer writes `data/jobs.db` instead of
-Turso — a file the GUI no longer reads. The rows land, every count reconciles,
-and the jobs are invisible. This has already happened once: 101 rows went to the
-local file and had to be re-imported from the archive.
+`src/jobs_db.py` loads `.env` itself, by absolute path, so the importer reaches
+Turso from any shell. The `source` line is still here because the backup and
+verification snippets below open `libsql` directly and read
+`TURSO_DATABASE_URL` from the environment; keep it on every command so they all
+agree. It does not override a variable you have set on purpose — `jobs_db` uses
+`override=False`, and an *empty* `TURSO_DATABASE_URL` is what keeps you on a
+local copy.
 
 The script prints which database it wrote to. Read that line; do not assume it.
+Before this was fixed, 101 rows once landed in `data/jobs.db`, a file nothing
+reads, and every count still reconciled.
 
 Dry run — writes nothing. It prints every row as NEW or DUP, plus within-file duplicates collapsed and records skipped.
 
@@ -211,7 +212,7 @@ Records are dropped when `_api_c2_is_invalid` is set, when `company_name` is bla
 | Flag | Effect |
 |---|---|
 | *(none)* | dry-run preview |
-| `--write` | upsert new rows into the tracker DB — Turso when `.env` is sourced, `data/jobs.db` otherwise |
+| `--write` | upsert new rows into the tracker DB — Turso when `TURSO_DATABASE_URL` is set (`.env` sets it), `data/jobs.db` when it is empty |
 | `--clear` | with `--write`: archive the inbox, then empty it |
 | `--all` | include records whose application was never submitted (they land as `Tracking`) |
 | `--skip-existing` | do not merge into rows already in the tracker; report and ignore them |
