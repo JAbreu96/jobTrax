@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.jobs_db import (  # noqa: E402
     COLUMNS, _use_libsql, get_all_jobs, shared_connection, status_rank,
-    update_job_fields, upsert_job
+    update_job_fields, upsert_jobs
 )
 
 P = "_api_c2_"
@@ -459,13 +459,14 @@ def main() -> int:
             print("(--clear only takes effect alongside --write; the input file is untouched.)")
         return 0
 
-    # One connection for the whole write pass. upsert_job and update_job_fields
+    # One connection for the whole write pass. upsert_jobs and update_job_fields
     # each open their own otherwise, and against Turso that is ~84ms apiece --
-    # 8.5s of pure connecting on a 101-row import, dwarfing the writes.
+    # 8.5s of pure connecting on a 101-row import, dwarfing the writes. New rows
+    # are batched for the same reason: a round trip per row is what made a
+    # 2,023-row import take over ten minutes.
     updated = 0
     with shared_connection(create=True):
-        for row in groups["new"]:
-            upsert_job(row)
+        upsert_jobs(groups["new"])
 
         # Address each update to the key of the row we FOUND, never the key implied
         # by the incoming record: date_added comes from ApplyPass's datetime_matched,
