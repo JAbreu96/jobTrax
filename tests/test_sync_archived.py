@@ -91,6 +91,15 @@ def test_sync_defaults_new_rows_to_unarchived(synced):
     assert archived == 0
 
 
+def test_sync_refuses_to_run_against_turso(monkeypatch):
+    """The guard: this script only ever writes the local file, so it must not
+    run at all once Turso is the real store -- silently succeeding would just
+    repeat the 153-row split-brain this script caused once already."""
+    monkeypatch.setattr(jobs_db, "_use_libsql", lambda: True)
+    with pytest.raises(RuntimeError, match="TURSO_DATABASE_URL"):
+        sync_mod.sync()
+
+
 def test_sync_still_updates_the_other_columns(synced):
     """
     Guards the fix itself: carrying `archived` forward must not turn the write
