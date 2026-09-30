@@ -36,6 +36,11 @@ resume_folder_id: ""
 # Only relevant if you claim New York unemployment.
 ws5_record_start: ""
 ws5_output_dir: ~/Desktop/WS5_work_search_records
+
+# Your ApplyPass dashboard, as the address bar shows it once signed in. The
+# applypass-inbound skill opens it to capture Job Applied; the daily 09:30 run
+# stops without it. Blank if you do not use ApplyPass.
+applypass_dashboard_url: ""
 ---
 
 # Profile

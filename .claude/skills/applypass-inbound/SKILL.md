@@ -18,7 +18,8 @@ skill's folder -- pages through the **Job Applied** list inside the ApplyPass ta
 downloads one merged export. No DevTools, no clicking
 through pages. It only reads; it never touches the database.
 
-1. Open the user's ApplyPass dashboard in a new tab and wait until the job list and its
+1. Open the user's ApplyPass dashboard (`applypass_dashboard_url` in the front matter of
+   `config/profile.md`) in a new tab and wait until the job list and its
    page-size dropdown have rendered (~20s; the app is slow to boot).
 2. Inject the script: pass the full contents of `inpage.js` to the `javascript_tool`.
    It installs `window.__applypassCapture` and starts listening. Inject **before**
@@ -251,6 +252,9 @@ there to ask:
 - **Touch only three controls.** On the ApplyPass page, click only the Job Applied tab,
   the page-size dropdown and the pager arrows. Never click like/dislike, **Pause
   Applying**, Edit Profile, or anything that changes the account.
+- **Never ask a question.** Nobody will answer it, and a reply without a `RESULT` line
+  reads as a failure. Anything you would ask about is a stop: say what was missing in
+  the `RESULT: stopped:` line. A blank `applypass_dashboard_url` is one of these.
 - **Never sign in.** If the page shows a login screen, the session has expired: stop.
   Credentials are the user's to enter.
 - **Bounded recovery.** Allow one Job Matches retry and two `stuck` recoveries, each a
