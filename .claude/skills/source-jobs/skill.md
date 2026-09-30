@@ -32,9 +32,8 @@ policy on how to weigh a mismatch, not a fact about the candidate.
 ### Experience-level scoring rules
 Apply these adjustments **before** finalizing any match score:
 
-- **Ideal range:** roles asking for 0–3 years → no penalty
-- **Slight stretch:** roles asking for 3–5 years → subtract 8 points and note "experience stretch"
-- **Too senior:** roles explicitly titled Senior, Staff, Principal, Lead, or requiring 5+ years → subtract 15 points and flag `⚠️ senior role`
+- **Ideal range:** roles asking for 0–5 years → no penalty
+- **Slight stretch:** roles explicitly titled Senior, Staff, Principal, Lead, or requiring 5+ years → subtract 8 points and note "experience stretch"
 - **New grad / intern:** roles requiring current enrollment in a degree program → subtract 20 points and flag `⚠️ eligibility concern`
 
 Do NOT filter out senior roles entirely — just score them honestly so the user can decide.
