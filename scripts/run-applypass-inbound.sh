@@ -61,7 +61,7 @@ run_start=$(wc -l < "$LOG_FILE")
 # logged-in browser.
 #
 # Sonnet pinned by full name for the reason run-inbox-triage.sh gives.
-claude -p "/applypass-inbound This is the unattended daily run. Follow the skill's 'Unattended runs' section: capture incrementally in Chrome from Step 0 using the --cutoff date, then import. You are pre-authorized to download the capture to ~/Downloads, move it into the inbox, and run the import with --write --clear after the backup. End your report with exactly one line: RESULT: imported <n> new, <m> updated -- or RESULT: stopped: <reason>." \
+claude -p "/applypass-inbound This is the unattended daily run. Follow the skill's 'Unattended runs' section: capture incrementally in Chrome from Step 0 using the --cutoff date, then import. The capture script is $PWD/browser_extension/applypass_capture/inpage.js (repo root, not the skill's folder). You are pre-authorized to download the capture to ~/Downloads, move it into the inbox, and run the import with --write --clear after the backup. End your report with exactly one line: RESULT: imported <n> new, <m> updated -- or RESULT: stopped: <reason>." \
   --chrome \
   --mcp-config .mcp.json \
   --strict-mcp-config \

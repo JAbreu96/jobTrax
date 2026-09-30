@@ -13,8 +13,9 @@ If the inbox is empty and Claude-in-Chrome is available, fill it yourself with S
 
 ## Step 0 — Capture from ApplyPass in the browser
 
-`browser_extension/applypass_capture/inpage.js` pages through the **Job Applied** list
-inside the ApplyPass tab and downloads one merged export. No DevTools, no clicking
+`browser_extension/applypass_capture/inpage.js` -- at the **repo root**, not inside this
+skill's folder -- pages through the **Job Applied** list inside the ApplyPass tab and
+downloads one merged export. No DevTools, no clicking
 through pages. It only reads; it never touches the database.
 
 1. Open the user's ApplyPass dashboard in a new tab and wait until the job list and its
