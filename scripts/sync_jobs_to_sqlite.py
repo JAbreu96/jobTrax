@@ -58,6 +58,19 @@ def init_db(conn):
 
 
 def sync():
+    # This script only ever writes data/jobs.db -- it builds its own INSERT OR
+    # REPLACE rather than going through jobs_db.upsert_job, and never looks at
+    # TURSO_DATABASE_URL. When Turso is configured, that file is the same
+    # stale, nothing-reads-it copy that split 153 rows from production once
+    # already (see CLAUDE.md); running this script would write real-looking
+    # data into it again with nothing catching the mistake.
+    if jobs_db._use_libsql():
+        raise RuntimeError(
+            "TURSO_DATABASE_URL is set -- the job tracker is on Turso now, "
+            "and this script only writes the local data/jobs.db file, which "
+            "nothing else reads. Refusing to run so it can't silently repeat "
+            "the 153-row split-brain this repo already had once."
+        )
     print("Fetching rows from Google Sheets...")
     rows = get_sheet_rows()
     print(f"Found {len(rows)} rows.")
