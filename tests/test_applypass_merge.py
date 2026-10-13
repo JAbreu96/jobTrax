@@ -228,6 +228,22 @@ def test_a_bare_key_record_parses_like_its_prefixed_twin(paj):
     assert len(paj.parse_export([bare])["rows"]) == 1
 
 
+def test_date_added_is_capped_at_the_application_date(paj):
+    """
+    A job is matched before it is applied to, but ApplyPass restamps
+    datetime_matched in bulk: on 2026-10-13 every valid record read 16:01:11Z,
+    which dated 541 applications from earlier that month to the day of the
+    capture. The application date bounds it.
+    """
+    restamped = {**_rec(matched="2026-10-13T16:01:11Z"),
+                 "_api_c2_application_submitted_date": "2026-10-02T15:00:00Z"}
+    assert paj.parse_record(restamped)["date_added"] == "2026-10-02"
+
+    matched_first = {**_rec(matched="2026-08-11T15:00:00Z"),
+                     "_api_c2_application_submitted_date": "2026-10-01T15:00:00Z"}
+    assert paj.parse_record(matched_first)["date_added"] == "2026-08-11"
+
+
 # --- incremental cutoff ------------------------------------------------------
 
 AUTO_NOTE = "Imported from auto-apply export (auto-submitted application)."

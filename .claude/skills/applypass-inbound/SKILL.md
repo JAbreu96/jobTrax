@@ -282,7 +282,7 @@ so an archived export still re-runs.
 
 | Tracker column | Export field | Note |
 |---|---|---|
-| `date_added` | `datetime_matched` | when the service matched the job, not when it applied |
+| `date_added` | `datetime_matched` | when the service matched the job, capped at the application date — ApplyPass restamps match dates in bulk |
 | `date_applied` | `application_submitted_date` | |
 | `status` | — | `Applied` when submitted, else `Tracking` |
 | `job_summary` | — | never imported; left blank. Look a posting up on demand, or fill blanks with `scripts/backfill_job_fields.py` |
