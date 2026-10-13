@@ -121,6 +121,12 @@ def parse_record(rec: dict) -> dict:
     """Map one export record onto the tracker's column shape."""
     submitted = bool(_get(rec, "application_submitted_bool"))
     applied_date = _iso_to_date(_get(rec, "application_submitted_date", "")) if submitted else ""
+    # A job is matched before it is applied to, but ApplyPass restamps
+    # datetime_matched in bulk -- on 2026-10-13 every valid record read the same
+    # 16:01:11Z -- so the application date caps it.
+    matched_date = _iso_to_date(_get(rec, "datetime_matched", ""))
+    if matched_date and applied_date:
+        matched_date = min(matched_date, applied_date)
     return {
         "company": (_get(rec, "company_name") or "").strip(),
         "position_title": (_get(rec, "job_title") or "").strip(),
@@ -131,7 +137,7 @@ def parse_record(rec: dict) -> dict:
         "job_summary": "",
         "location": _location(rec),
         "link": (_get(rec, "job_url") or "").strip(),
-        "date_added": _iso_to_date(_get(rec, "datetime_matched", "")),
+        "date_added": matched_date,
         "contacts": "",
         "notes": _notes(rec),
         "outreach_date": "",
