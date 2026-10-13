@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
-Parse an auto-apply service export (records with `_api_c2_*` keys) into rows
-shaped for the local job tracker DB (src/jobs_db.COLUMNS).
+Parse an auto-apply service export into rows shaped for the local job tracker DB
+(src/jobs_db.COLUMNS). Records carry bare keys (`match_id`, `company_name`) as the
+ApplyPass API sends them; exports from the Bubble app it replaced carry the same
+fields under an `_api_c2_` prefix, and both parse.
 
 Paste each export into the inbox file (data/applied_inbox.json), then:
 
@@ -44,7 +46,9 @@ ARCHIVE_DIR = os.path.join(_DATA_DIR, "applied_inbox_archive")
 
 
 def _get(rec: dict, field: str, default=None):
-    """Read a field with the `_api_c2_` prefix stripped from the caller's view."""
+    """Read a field by its bare name, falling back to the Bubble-era `_api_c2_` key."""
+    if field in rec:
+        return rec[field]
     return rec.get(P + field, default)
 
 

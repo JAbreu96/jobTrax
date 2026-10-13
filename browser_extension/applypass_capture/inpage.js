@@ -1,107 +1,94 @@
-// ApplyPass capture without DevTools: inject this into the dashboard tab, and it
-// pages through "Job Applied" by itself and downloads one merged export.
+// ApplyPass capture without DevTools: inject this into the signed-in dashboard
+// tab, and it reads the Application column straight from the API the column
+// itself calls, then downloads one merged export.
 //
-// The DevTools panel next to this file needs a human to open DevTools and click
-// through every page. An agent driving Chrome can do neither, so this does the
-// same job from inside the page: it wraps XMLHttpRequest and fetch to read each
-// page as the app receives it, clicks "next" until every page has arrived, and
-// hands back a file in the shape scripts/parse_applied_jobs.py already accepts.
-// Like the panel, it never touches the database.
+// ApplyPass moved from Bubble to a Next.js app in October 2026. The Bubble
+// version of this file drove the pager by hand -- a page-size select, a next
+// arrow, synthetic clicks the app often ignored -- because Bubble's data only
+// ever arrived as a side effect of the UI. The new board is an infinite-scroll
+// Kanban, and its Application column is one plain GET:
 //
-// Three things the first full run (2,782 records, 28 pages) taught, each handled
-// below rather than rediscovered:
-//   - "previous" and "next" are the same element with the same generated class,
-//     so the next button is found by position: the arrow right of the page number.
-//   - ApplyPass is a Bubble app, and Bubble ignores synthetic clicks while a
-//     workflow is still running. A click that produces no page is retried, and
-//     after that the run parks as "stuck" and asks for one real click.
-//   - A background tab keeps running but slower, so waits are generous and the
-//     run is resumable rather than restarted.
+//   /api/jobListingMatches?current_stage_type_key=job_applied&page=N&pageSize=20&...
 //
-// Usage from the Claude-in-Chrome javascript tool (each call must finish in 45s,
-// so start() returns immediately and status() is polled):
+// authenticated by the session cookie. Asking for it from inside the tab, sorted
+// by submission date at 500 a page, needs no scrolling and no clicks: a full
+// capture is ~8 requests, an incremental one ~2, and the whole run fits in one
+// javascript-tool call. Like the panel, it only reads; it never touches the
+// database.
 //
-//   <contents of this file>                       // installs window.__applypassCapture
-//   __applypassCapture.start()                    // runs in the background
-//   __applypassCapture.start({stopBefore: "2026-09-26"})   // incremental: see below
-//   __applypassCapture.status()                   // poll until state is "done"
-//   __applypassCapture.download()                 // -> "applied_inbox_<stamp>.json"
+// Usage from the Claude-in-Chrome javascript tool:
 //
-// The pure helpers at the top are exported for node --test; everything that
-// touches the DOM lives in the driver below them.
+//   <contents of this file>                                    // installs window.__applypassCapture
+//   await __applypassCapture.run({stopBefore: "2026-09-29"})   // -> status(); omit for a full run
+//   __applypassCapture.download()                              // -> {file, records}
+//
+// The helpers at the top, `capture` included, are exported for node --test;
+// only the fetch and the download below them need the live page.
 
 (function (root) {
   "use strict";
 
-  const RECORD_KEY = "_api_c2_match_id";
+  const RECORD_KEY = "match_id";
+  const APPLIED_STAGE = "job_applied";
+  const PAGE_SIZE = 500;
+  // The importer never reads the description, and it is ~5KB of a ~7.5KB record.
+  // Dropped here so the download, the inbox file and every archived copy stay small.
+  const DESCRIPTION_FIELDS = ["job_description", "job_description_raw_html",
+                              "job_description_truncated"];
 
-  // --- pure helpers ---------------------------------------------------------
+  // --- helpers --------------------------------------------------------------
 
   /**
-   * One page of the Job Applied list, read out of a parsed response body, or
-   * null when the body is not one.
-   *
-   * Bubble flattens the API connector's response into dotted keys on a single
-   * object -- `_api_c2_body.data` beside `_api_c2_body.page` -- so the page
-   * numbers are siblings of the records, found by suffix. Finding the records
-   * by their identifying field rather than by key is the same bet detect.mjs
-   * makes, for the same reason: the envelope's name is not stable.
+   * One page of the Application column, newest submission first. The column
+   * itself asks for 20 at a time sorted by match score; the date sort is what
+   * lets an incremental capture stop early, and the endpoint takes 500 a page.
    */
-  function readPage(body, maxDepth = 8) {
-    if (maxDepth < 0 || body === null || typeof body !== "object") return null;
-    if (!Array.isArray(body)) {
-      for (const [key, value] of Object.entries(body)) {
-        if (Array.isArray(value) && value.length && value.every(isRecord)) {
-          const meta = (name) => {
-            const k = Object.keys(body).find((x) => x === name || x.endsWith("." + name));
-            return k === undefined ? null : Number(body[k]);
-          };
-          return {
-            key,
-            records: value,
-            page: meta("page"),
-            pageSize: meta("pageSize"),
-            totalPages: meta("totalPages"),
-            totalRecords: meta("totalRecords"),
-          };
-        }
-      }
-    }
-    for (const value of Object.values(body)) {
-      const found = readPage(value, maxDepth - 1);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  function isRecord(value) {
-    return value !== null && typeof value === "object" && !Array.isArray(value) &&
-      RECORD_KEY in value;
+  function pageUrl(origin, jspId, page, pageSize = PAGE_SIZE) {
+    const url = new URL("/api/jobListingMatches", origin);
+    const params = {
+      jsp_id: jspId,
+      jobDetails: "true",
+      includeCurrentStage: "true",
+      current_stage_type_key: APPLIED_STAGE,
+      page,
+      pageSize,
+      sortFirstByMatchScoreDesc: "false",
+      sortBy: "application_submitted_date",
+      sortOrder: "desc",
+    };
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+    return url.toString();
   }
 
   /**
-   * Whether a page came from the Job Applied tab. Job Matches answers from the
-   * same endpoint in the same shape, so the only tell is in the records: every
-   * applied record is submitted, and a matches page is mostly not. The first
-   * live run of this script had its tab click swallowed while the app was still
-   * loading and captured Job Matches -- 17,000 records nobody applied to.
+   * Whether every record on a page belongs in the Application column. Job
+   * Matches answers from the same endpoint in the same shape, and the first
+   * Bubble-era run captured 17,000 of those by mistake.
    */
   function isAppliedPage(records) {
-    return records.every((r) => r._api_c2_application_submitted_bool === true);
+    return records.every((r) => r.current_stage_type_key === APPLIED_STAGE &&
+      r.application_submitted_bool === true);
   }
 
   /**
    * Whether a page reaches back past the cutoff, so paging can stop after it.
-   * Job Applied is sorted newest submission first, so once a page holds a record
+   * Pages arrive newest submission first, so once a page holds a record
    * submitted before `stopBefore` every later page is older still -- and already
    * in the tracker. `stopBefore` comes from `parse_applied_jobs.py --cutoff`.
    */
   function reachedCutoff(records, stopBefore) {
     if (!stopBefore) return false;
     return records.some((r) => {
-      const submitted = String(r._api_c2_application_submitted_date || "").slice(0, 10);
+      const submitted = String(r.application_submitted_date || "").slice(0, 10);
       return submitted !== "" && submitted < stopBefore;
     });
+  }
+
+  /** A record without its description fields. */
+  function slim(record) {
+    const out = { ...record };
+    for (const field of DESCRIPTION_FIELDS) delete out[field];
+    return out;
   }
 
   /** Every captured page's records, deduped on match_id, in page order. */
@@ -120,23 +107,6 @@
     return out;
   }
 
-  /**
-   * The "next" arrow, from plain rectangles: the nearest textless button to the
-   * right of the page-number button, on the same row. `buttons` is
-   * [{text, left, right, top, bottom, ref}], so it can be tested without a DOM.
-   *
-   * By position because it is the only thing that tells the arrows apart. On
-   * page 1 there is one arrow; from page 2 on there are two with an identical
-   * class, and picking by class sent the first run backwards from page 7.
-   */
-  function pickNext(buttons, pageButton) {
-    const mid = (b) => (b.top + b.bottom) / 2;
-    return buttons
-      .filter((b) => b !== pageButton && !b.text && b.left >= pageButton.right - 2 &&
-        Math.abs(mid(b) - mid(pageButton)) < 20)
-      .sort((a, b) => a.left - b.left)[0] || null;
-  }
-
   /** 2026-09-28T11-16-22 -- the data/applied_inbox_archive/ convention. */
   function timestamp(d = new Date()) {
     const p = (n) => String(n).padStart(2, "0");
@@ -144,8 +114,59 @@
       `T${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
   }
 
+  /**
+   * Page through the Application column. `getJson(url)` does the fetching, so
+   * node tests can hand in a fake ApplyPass. `onPage` sees the result after
+   * every page, for a caller that wants progress.
+   */
+  async function capture(getJson, origin, { stopBefore = "", pageSize = PAGE_SIZE,
+                                            onPage = () => {} } = {}) {
+    const me = await getJson(new URL("/api/me", origin).toString());
+    if (!me || me.jsp_id === undefined || me.jsp_id === null) {
+      throw new Error("/api/me returned no jsp_id");
+    }
+    const read = async (page) => {
+      const body = await getJson(pageUrl(origin, me.jsp_id, page, pageSize));
+      if (!body || !Array.isArray(body.data)) throw new Error(`page ${page} has no data array`);
+      if (!isAppliedPage(body.data)) {
+        throw new Error(`page ${page} holds records from outside the Application column`);
+      }
+      return body;
+    };
+
+    const result = { pages: {}, totalPages: null, totalRecords: null, stoppedAt: null, log: [] };
+    let firstTotal = null;
+    for (let page = 1; ; page++) {
+      const body = await read(page);
+      result.pages[page] = body.data.map(slim);
+      result.totalPages = body.totalPages;
+      result.totalRecords = body.totalRecords;
+      if (page === 1) firstTotal = body.totalRecords;
+      result.log.push(`page ${page}: ${body.data.length} records`);
+      onPage(result);
+      if (reachedCutoff(body.data, stopBefore)) {
+        result.stoppedAt = page;
+        break;
+      }
+      // A missing totalPages or an empty page ends the run rather than paging forever.
+      if (!body.totalPages || !body.data.length || page >= body.totalPages) break;
+    }
+
+    // The service keeps applying while this runs, and every new application lands
+    // on page 1 -- already read. Later pages only shift down, which repeats a
+    // record rather than skipping one; the repeats dedupe on match_id. So re-read
+    // page 1 once, kept as page 0 beside the first copy.
+    const grew = (result.totalRecords || 0) - (firstTotal || 0);
+    if (grew > 0) {
+      result.pages[0] = (await read(1)).data.map(slim);
+      result.log.push(`page 1 re-read: ${grew} submitted during the run`);
+    }
+    return result;
+  }
+
   const helpers = {
-    readPage, isAppliedPage, reachedCutoff, mergePages, missingPages, pickNext, timestamp, RECORD_KEY,
+    pageUrl, isAppliedPage, reachedCutoff, slim, mergePages, missingPages, timestamp, capture,
+    RECORD_KEY, PAGE_SIZE,
   };
 
   if (typeof module !== "undefined" && module.exports) {
@@ -155,226 +176,49 @@
 
   // --- driver: everything below needs the live page -------------------------
 
-  // Re-injecting must not wrap the network twice or drop pages already held.
-  if (root.__applypassCapture) return;
-
-  const PAGE_SIZE = 100;
-  const PAGE_TIMEOUT_MS = 15000;
-  // Page 1 comes after a page-size change, which Bubble queues behind whatever
-  // it is still doing from the page load; the first live run needed more than 15s.
-  const FIRST_PAGE_TIMEOUT_MS = 40000;
-  const CLICKS_PER_PAGE = 3;
+  // No guard against re-injecting: nothing on the page is wrapped any more, so
+  // injecting a newer copy simply replaces the old one.
 
   const state = {
     pages: {},
     totalPages: null,
     totalRecords: null,
-    wrongTab: 0,        // Job Matches pages seen and refused
-    firstTotal: null,   // totalRecords when page 1 first arrived
-    rereading: false,   // the next page 1 is the end-of-run re-read, kept as page 0
     stopBefore: "",     // incremental cutoff; "" pages everything
     stoppedAt: null,    // the page that reached the cutoff
-    state: "idle",      // idle | running | stuck | done | error
+    state: "idle",      // idle | running | done | error
     message: "",
     log: [],
   };
 
-  function ingest(text) {
-    let body;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      return;
+  // Error messages name the path only: the query carries the account id, and
+  // the javascript tool withholds any output that looks like a query string.
+  async function getJson(url) {
+    const resp = await root.fetch(url, { credentials: "include",
+                                         headers: { accept: "application/json" } });
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error("signed out of ApplyPass: sign in, then run again");
     }
-    const found = readPage(body);
-    if (!found || !found.page) return;
-    // Only 100-per-page responses count. Getting page 1 can mean flipping the
-    // size through 50, and that response can land after the 100 one -- stored,
-    // it would overwrite page 1 with half a page.
-    if (found.pageSize && found.pageSize !== PAGE_SIZE) return;
-    if (!isAppliedPage(found.records)) {
-      state.wrongTab += 1;
-      return;
-    }
-    // The importer never reads the description, and it is ~5KB of HTML per
-    // record -- about 13MB of a full 19MB export. Dropped here so the download,
-    // the inbox file and every archived copy stay small.
-    for (const record of found.records) delete record._api_c2_job_description;
-    if (found.page === 1 && state.rereading) {
-      state.pages[0] = found.records;
-    } else {
-      state.pages[found.page] = found.records;
-    }
-    if (found.page === 1 && state.firstTotal === null) state.firstTotal = found.totalRecords;
-    if (found.totalPages) state.totalPages = found.totalPages;
-    if (found.totalRecords) state.totalRecords = found.totalRecords;
+    if (!resp.ok) throw new Error(`${new URL(url).pathname} answered HTTP ${resp.status}`);
+    return resp.json();
   }
 
-  const origSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function (...args) {
-    this.addEventListener("load", () => {
-      if (typeof this.responseText === "string" && this.responseText.includes(RECORD_KEY)) {
-        ingest(this.responseText);
-      }
-    });
-    return origSend.apply(this, args);
-  };
-  const origFetch = root.fetch;
-  root.fetch = async function (...args) {
-    const resp = await origFetch.apply(this, args);
-    resp.clone().text().then((t) => { if (t.includes(RECORD_KEY)) ingest(t); }).catch(() => {});
-    return resp;
-  };
-
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  function rect(el) {
-    const r = el.getBoundingClientRect();
-    return { text: el.textContent.trim(), left: r.left, right: r.right, top: r.top,
-             bottom: r.bottom, ref: el };
-  }
-
-  function pageSizeSelect() {
-    return [...document.querySelectorAll("select")]
-      .find((s) => sizeOption(s, "100")) || null;
-  }
-
-  // Bubble renders the dropdown's placeholder as a real <option>, valued
-  // PLACEHOLDER_<n> and labelled with the page size the app currently holds --
-  // which it remembers between visits. So the selected label is the truth about
-  // the current size, but the option to *choose* must be the real one: selecting
-  // the placeholder fires nothing.
-  function sizeOption(select, label) {
-    return [...select.options].find((o) =>
-      o.textContent.trim() === label && !o.value.includes("PLACEHOLDER")) || null;
-  }
-
-  /** The page-number button on the pager row, found beside the page-size select. */
-  function pager() {
-    const select = pageSizeSelect();
-    if (!select) return null;
-    const row = rect(select);
-    const mid = (b) => (b.top + b.bottom) / 2;
-    const buttons = [...document.querySelectorAll("button")].map(rect)
-      .filter((b) => Math.abs(mid(b) - mid(row)) < 20 && b.right <= row.left);
-    const pageButton = buttons.find((b) => /^\d+$/.test(b.text));
-    if (!pageButton) return null;
-    return { current: Number(pageButton.text), next: pickNext(buttons, pageButton) };
-  }
-
-  function click(el) {
-    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
-      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: root }));
-    }
-  }
-
-  function setPageSize(label) {
-    const select = pageSizeSelect();
-    select.value = sizeOption(select, label).value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  async function waitFor(pageNo, timeout = PAGE_TIMEOUT_MS) {
-    const t0 = Date.now();
-    while (Date.now() - t0 < timeout) {
-      if (state.pages[pageNo]) return true;
-      await sleep(400);
-    }
-    return false;
-  }
-
-  /** Re-select 100 per page, which reloads the list from page 1. */
-  async function reloadFirstPage() {
-    const select = pageSizeSelect();
-    const current = select.options[select.selectedIndex]?.textContent.trim();
-    if (current === "100") {
-      setPageSize("50");
-      await sleep(3000);
-    }
-    setPageSize("100");
-  }
-
-  async function run() {
-    state.state = "running";
-    state.message = "";
-
-    if (!state.pages[1]) {
-      // A size change reloads from page 1, which is the only way to get page 1's
-      // response without navigating. Already on 100, flip through 50 so the
-      // change still fires.
-      if (!pageSizeSelect()) return fail("no page-size select -- is the Job Applied list showing?");
-      await reloadFirstPage();
-      if (!(await waitFor(1, FIRST_PAGE_TIMEOUT_MS))) {
-        return fail(state.wrongTab
-          ? "the list showing is Job Matches, not Job Applied: click the Job Applied " +
-            "tab, wait for it to load, then call start() again"
-          : "page 1 never arrived after selecting 100 per page");
-      }
-    }
-
-    while (true) {
-      const p = pager();
-      if (!p) return fail("pager not found");
-      if (state.pages[p.current] && reachedCutoff(state.pages[p.current], state.stopBefore)) {
-        state.stoppedAt = p.current;
-        break;
-      }
-      const target = p.current + 1;
-      if (state.totalPages && p.current >= state.totalPages) break;
-      if (!p.next) return fail(`no next arrow on page ${p.current}`);
-
-      let arrived = false;
-      for (let attempt = 1; attempt <= CLICKS_PER_PAGE && !arrived; attempt++) {
-        // Click again only if the last click did not move the pager. A slow page
-        // is not an ignored click: re-clicking it advanced the first live run two
-        // pages at once, and a page jumped over that way never gets requested.
-        const now = pager();
-        if (!now || now.current < target) click(p.next.ref);
-        arrived = await waitFor(target);
-      }
-      state.log.push(`page ${target}: ${arrived ? "ok" : "no response"}`);
-      if (!arrived) {
-        state.state = "stuck";
-        state.message = `page ${target} did not load. The app ignores synthetic clicks while ` +
-          `it is busy: click the next arrow once by hand, then call resume().`;
-        return;
-      }
-    }
-
-    const missing = missingPages(state.pages, state.stoppedAt || state.totalPages || 0);
-    if (missing.length) {
-      return fail(`finished paging but pages ${missing.join(", ")} never arrived`);
-    }
-
-    // The service keeps applying while this runs, and every new application lands
-    // on page 1 -- already read. The first live run finished one record short of
-    // the total for exactly this reason. Re-read page 1 once at the end, keeping
-    // the old copy too: records it held may have shifted onto a page 2 that was
-    // read before the shift.
-    const grew = (state.totalRecords || 0) - (state.firstTotal || 0);
-    if (grew > 0) {
-      state.rereading = true;
-      await reloadFirstPage();
-      const ok = await waitFor(0, FIRST_PAGE_TIMEOUT_MS);
-      state.rereading = false;
-      state.log.push(`page 1 re-read: ${grew} submitted during the run`);
-      if (!ok) return fail(`${grew} application(s) were submitted during the run and ` +
-                           `re-reading page 1 failed; start() again to retry`);
-    }
-    state.state = "done";
-  }
-
-  function fail(message) {
-    state.state = "error";
-    state.message = message;
-  }
-
-  function start(options = {}) {
+  async function run(options = {}) {
     if (state.state === "running") return status();
-    // The first cutoff given sticks, so a resume() cannot quietly widen or narrow
-    // a run that is half done.
-    if (options.stopBefore && !state.stopBefore) state.stopBefore = options.stopBefore;
-    run().catch((e) => fail(String(e && e.stack || e)));
+    Object.assign(state, {
+      pages: {}, totalPages: null, totalRecords: null, stoppedAt: null, log: [],
+      stopBefore: options.stopBefore || "", state: "running", message: "",
+    });
+    try {
+      const result = await capture(getJson, root.location.origin, {
+        stopBefore: state.stopBefore,
+        pageSize: options.pageSize || PAGE_SIZE,
+        onPage: (partial) => Object.assign(state, partial),
+      });
+      Object.assign(state, result, { state: "done" });
+    } catch (e) {
+      state.state = "error";
+      state.message = String((e && e.message) || e);
+    }
     return status();
   }
 
@@ -392,7 +236,6 @@
         ? missingPages(state.pages, state.stoppedAt || state.totalPages) : [],
       stopBefore: state.stopBefore,
       stoppedAt: state.stoppedAt,
-      wrongTabPagesRefused: state.wrongTab,
       lastLog: state.log.slice(-3),
     };
   }
@@ -412,5 +255,5 @@
     return { file: name, records: records.length };
   }
 
-  root.__applypassCapture = { start, resume: start, status, download, helpers };
+  root.__applypassCapture = { run, status, download, helpers };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -1,4 +1,4 @@
-import { findExportRecords, RECORD_KEY } from "./detect.mjs";
+import { findExportRecords, recordId } from "./detect.mjs";
 
 // State lives in memory only, so it dies with DevTools. That is deliberate:
 // chrome.storage would survive, but it would also serve a buffer with no
@@ -61,7 +61,7 @@ function ingest(request, content) {
 
   let added = 0;
   for (const record of found) {
-    const key = record[RECORD_KEY] ?? JSON.stringify(record);
+    const key = recordId(record) ?? JSON.stringify(record);
     if (!records.has(key)) {
       records.set(key, record);
       added += 1;

@@ -4,7 +4,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findExportRecords } from "./detect.mjs";
+import { findExportRecords, recordId } from "./detect.mjs";
 
 const rec = (id, company) => ({
   _api_c2_match_id: id,
@@ -18,6 +18,14 @@ test("finds records wrapped in an envelope", () => {
   const found = findExportRecords({ data: [rec(1, "Acme"), rec(2, "Globex")] });
   assert.equal(found.length, 2);
   assert.equal(found[0]._api_c2_company_name, "Acme");
+});
+
+test("finds the Next.js app's bare-key records", () => {
+  // ApplyPass dropped the `_api_c2_` prefix when it left Bubble.
+  const found = findExportRecords({ page: 1, data: [{ match_id: 9, company_name: "Acme" }] });
+  assert.equal(found.length, 1);
+  assert.equal(recordId(found[0]), 9);
+  assert.equal(recordId(rec(3, "Globex")), 3);
 });
 
 test("finds records in an envelope the Python parser does not know", () => {
