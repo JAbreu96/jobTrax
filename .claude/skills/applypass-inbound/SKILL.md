@@ -1,6 +1,6 @@
 ---
 name: applypass-inbound
-description: Import an auto-apply service export (ApplyPass-style JSON with `_api_c2_*` fields) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, asks to import auto-submitted applications, or asks to pull their applied jobs from ApplyPass.
+description: Import an ApplyPass auto-apply export (JSON match records) into the local job tracker DB. Use when the user has pasted an export into the inbox file, says the inbox is ready to parse, asks to import auto-submitted applications, or asks to pull their applied jobs from ApplyPass.
 ---
 
 Import the export sitting in the inbox into the job tracker.
@@ -13,47 +13,45 @@ If the inbox is empty and Claude-in-Chrome is available, fill it yourself with S
 
 ## Step 0 — Capture from ApplyPass in the browser
 
-`browser_extension/applypass_capture/inpage.js` pages through the **Job Applied** list
-inside the ApplyPass tab and downloads one merged export. No DevTools, no clicking
-through pages. It only reads; it never touches the database.
+`browser_extension/applypass_capture/inpage.js` reads the **Application** column of the
+ApplyPass board from the API the column itself calls, inside the signed-in tab, and
+downloads one merged export. No DevTools, no scrolling, no clicks. It only reads; it
+never touches the database.
 
-1. Open the user's ApplyPass dashboard in a new tab and wait until the job list and its
-   page-size dropdown have rendered (~20s; the app is slow to boot).
-2. Inject the script: pass the full contents of `inpage.js` to the `javascript_tool`.
-   It installs `window.__applypassCapture` and starts listening. Inject **before**
-   switching tabs so the first page is heard.
-3. Click **Job Applied**. Use a coordinate click from a screenshot: the app ignores
-   element-ref and synthetic clicks while it is still loading, and the dashboard opens on
-   Job Matches, which answers in the same shape.
-4. Get the cutoff, then start:
+1. Open the dashboard in a new tab — `applypass_dashboard_url` in `config/profile.md`,
+   `https://app.applypass.com/dashboard` — and wait until the board renders (~15s). A
+   redirect to `/sign-in` means the session expired: stop there, because signing in is
+   the user's to do.
+2. Get the cutoff:
 
    ```bash
    python scripts/parse_applied_jobs.py --cutoff
    ```
 
    It prints the newest auto-applied `date_applied` in the tracker less two days, e.g.
-   `2026-09-26`. Start with `__applypassCapture.start({stopBefore: "2026-09-26"})`: the
-   list is newest-first, so paging stops at the first page holding an older submission
-   and a weekly run is a handful of pages instead of all of them. It prints nothing
-   when no export has been imported yet; then call `start()` with no cutoff.
+   `2026-09-29`, or nothing when no export has been imported yet.
+3. Inject and run in one `javascript_tool` call: the full contents of `inpage.js`,
+   followed by
 
-   Poll `__applypassCapture.status()` until `state` is `done`. Pages take ~8s each. Wait between polls with the `computer` tool's `wait`
-   action, **not** a `setTimeout` inside the page: Chrome throttles timers in a
-   background tab to as little as once a minute, so an in-page 30s sleep can outlive the
-   javascript tool's 45s limit. The same throttling slows the capture itself, so keep
-   the tab in front if you can.
-   - `error` naming **Job Matches**: the tab click did not take. Click Job Applied again
-     (coordinates), wait, `start()` again. Pages it refused are counted in
-     `wrongTabPagesRefused` and never kept.
-   - `stuck`: the app ignored the synthetic click on the next arrow. Click the `›` arrow
-     once by coordinates, then `__applypassCapture.resume()`. It continues from there.
-5. Check `missing` is empty. A full run should also have `records == totalRecords`; an
-   incremental one stops early by design, so check `stoppedAt` is set instead — if it
-   is null the cutoff was never reached and the whole list was paged, which is correct
-   but means the tracker was further behind than the cutoff suggested.
-   `__applypassCapture.download()`
-   saves `applied_inbox_<timestamp>.json` to `~/Downloads` and returns the filename —
-   downloading is a user-visible action, so say what you are saving first.
+   ```js
+   JSON.stringify(await __applypassCapture.run({stopBefore: "2026-09-29"}))
+   ```
+
+   with `run()` and no argument when `--cutoff` printed nothing. The list arrives newest
+   submission first at 500 a page and stops at the first page holding an older one, so
+   an incremental run is one or two requests and a full one about eight — seconds either
+   way.
+4. Read the result. The capture is complete when `state` is `done` and `missing` is
+   empty.
+   - A full run also has `records == totalRecords`.
+   - An incremental run stops early by design, so `stoppedAt` is set instead. Null means
+     the cutoff was never reached and the whole list was read — correct, but the
+     tracker was further behind than the cutoff suggested.
+   - `error` gives its reason in `message`. "signed out" ends the run as in step 1;
+     anything else earns one more `run()`.
+5. `__applypassCapture.download()` saves `applied_inbox_<timestamp>.json` to
+   `~/Downloads` and returns the filename — downloading is a user-visible action, so say
+   what you are saving first.
 6. `mv ~/Downloads/<that filename> data/applied_inbox.json` and close the tab.
 
 ---
@@ -63,7 +61,8 @@ through pages. It only reads; it never touches the database.
 ```bash
 python -c "
 import json; d=json.load(open('data/applied_inbox.json'))
-print(f'{len(d)} records, {sum(1 for r in d if r.get(\"_api_c2_application_submitted_bool\"))} submitted')"
+s=lambda r: r.get(\"application_submitted_bool\", r.get(\"_api_c2_application_submitted_bool\"))
+print(f'{len(d)} records, {sum(1 for r in d if s(r))} submitted')"
 ```
 
 An empty inbox (`[]`) means the user has not pasted yet — say so and stop. Offer to open it: `code data/applied_inbox.json`.
@@ -108,7 +107,7 @@ Read the output before writing. Report to the user:
 - every DUP and what existing row it matched
 - every skipped record and why
 
-Records skipped for **no company name** are unrecoverable by the parser — the source itself left `_api_c2_company_name` blank. Surface their job title and URL so the user can decide whether to add them by hand.
+Records skipped for **no company name** are unrecoverable by the parser — the source itself left `company_name` blank. Surface their job title and URL so the user can decide whether to add them by hand.
 
 ---
 
@@ -219,8 +218,10 @@ EOF
 ```
 
 Rows that matched an **archived** job are reported missing here and should be —
-they were skipped on purpose. Expect the miss count to equal the archived-match
-count from Step 2.
+they were skipped on purpose. So is every `UPDT`/`SAME` row whose `datetime_matched`
+moved since it was stored: ApplyPass restamps match dates in bulk (all 923 valid
+records on 2026-10-13). The pass mark: no `MISSING` line names a row the preview
+called NEW, and the miss count is at most the `SAME` + `UPDT` + archived counts.
 
 ---
 
@@ -247,13 +248,13 @@ there to ask:
 - **Start from an empty inbox.** If `data/applied_inbox.json` is not `[]`, an earlier run
   stopped partway. Stop without touching it — someone has to look at what is in it.
 - **Always incremental.** Use `--cutoff`, or no cutoff when it prints nothing.
-- **Touch only three controls.** On the ApplyPass page, click only the Job Applied tab,
-  the page-size dropdown and the pager arrows. Never click like/dislike, **Pause
-  Applying**, Edit Profile, or anything that changes the account.
-- **Never sign in.** If the page shows a login screen, the session has expired: stop.
-  Credentials are the user's to enter.
-- **Bounded recovery.** Allow one Job Matches retry and two `stuck` recoveries, each a
-  single coordinate click. After that, stop without downloading.
+- **Read only.** The capture is navigate, inject, run, download — no clicks. Leave every
+  control on the board alone: the like buttons, the **Auto-apply** toggle and the rest
+  change the account.
+- **Never sign in.** A `/sign-in` page or a "signed out" error means the session has
+  expired: stop. Credentials are the user's to enter.
+- **One retry.** An `error` other than signed out gets one more `run()`. A second error
+  stops the run without downloading.
 - **Download only a complete capture.** `state` is `done` and `missing` is empty.
 - **Close the tab** whether the run succeeded or not.
 - **A row delta that does not match the NEW count** (Step 5) is still reported, as a
@@ -275,6 +276,10 @@ silent.
 
 `scripts/parse_applied_jobs.py` owns this; it is recorded here only where the choice is not obvious from the code.
 
+Fields are the API's bare names. Exports captured from the Bubble app ApplyPass replaced
+in October 2026 carry the same fields under an `_api_c2_` prefix; the parser reads both,
+so an archived export still re-runs.
+
 | Tracker column | Export field | Note |
 |---|---|---|
 | `date_added` | `datetime_matched` | when the service matched the job, not when it applied |
@@ -286,7 +291,7 @@ silent.
 
 The export's `match_score_combined` is the service's number, not a resume review. Notes label it as source-provided so it is never confused with a `/resume-review` score.
 
-Records are dropped when `_api_c2_is_invalid` is set, when `company_name` is blank, or — absent `--all` — when the application was never submitted.
+Records are dropped when `is_invalid` is set, when `company_name` is blank, or — absent `--all` — when the application was never submitted.
 
 ---
 

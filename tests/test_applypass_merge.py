@@ -209,6 +209,25 @@ def test_the_export_description_is_never_imported(db, paj):
         assert "job_summary" not in updates
 
 
+def test_a_bare_key_record_parses_like_its_prefixed_twin(paj):
+    """
+    ApplyPass left Bubble in October 2026 and its records lost the `_api_c2_`
+    prefix. The new shape must map to the same row -- notes and location
+    included -- and archived exports in the old shape must still re-run.
+    """
+    prefixed = {**_rec(location="California"),
+                "_api_c2_location_type": ["On-site"],
+                "_api_c2_match_score_combined": 0.81,
+                "_api_c2_seniority_level": "Mid-Level",
+                "_api_c2_job_source": "lever",
+                "_api_c2_job_id": 5}
+    bare = {k.removeprefix(paj.P): v for k, v in prefixed.items()}
+
+    assert paj.parse_record(bare) == paj.parse_record(prefixed)
+    assert paj.parse_record(bare)["location"] == "California (On-site)"
+    assert len(paj.parse_export([bare])["rows"]) == 1
+
+
 # --- incremental cutoff ------------------------------------------------------
 
 AUTO_NOTE = "Imported from auto-apply export (auto-submitted application)."

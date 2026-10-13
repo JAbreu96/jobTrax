@@ -7,17 +7,18 @@
 // envelope whose name is not stable.
 //
 // So we key on the records themselves rather than on their container: walk the
-// parsed body and return the first array whose elements carry `_api_c2_match_id`.
+// parsed body and return the first array whose elements carry a match id.
 // Envelope name and nesting depth stop mattering, and no domain or API path has
-// to be hardcoded. The `_api_c2_` prefix is distinctive enough that a false
-// positive is not a realistic concern.
+// to be hardcoded. The Bubble app sent `_api_c2_match_id`; the Next.js app that
+// replaced it in October 2026 sends a bare `match_id`. Both are accepted, so the
+// panel reads either app and an archived export still parses.
 //
 // This module deliberately touches no Chrome APIs so it stays runnable under
 // `node --test`. It is the one piece of this extension whose failure is silent
 // -- a wrong walk yields an empty panel and no stack trace -- so it is the one
 // piece that gets tests.
 
-export const RECORD_KEY = "_api_c2_match_id";
+export const RECORD_KEYS = ["match_id", "_api_c2_match_id"];
 
 /** A plain object carrying the export's identifying field. */
 function isRecord(value) {
@@ -25,8 +26,14 @@ function isRecord(value) {
     value !== null &&
     typeof value === "object" &&
     !Array.isArray(value) &&
-    RECORD_KEY in value
+    RECORD_KEYS.some((key) => key in value)
   );
+}
+
+/** A record's match id, under whichever key its app used. */
+export function recordId(record) {
+  for (const key of RECORD_KEYS) if (key in record) return record[key];
+  return undefined;
 }
 
 function walk(node, depth) {

@@ -15,15 +15,18 @@ the single implementation of the field mapping and a bug here can't write a bad 
 
 ## Without DevTools: `inpage.js`
 
-An agent driving Chrome can't open DevTools, so `inpage.js` does the same capture from
-inside the page: injected into the ApplyPass tab, it wraps `XMLHttpRequest`/`fetch`,
-sets 100 per page, clicks through every page of **Job Applied**, and downloads the same
-merged file this panel does. The `applypass-inbound` skill's Step 0 drives it.
+An agent driving Chrome can't open DevTools, so `inpage.js` captures from inside the
+page instead. ApplyPass's Next.js board (it left Bubble in October 2026) fills its
+**Application** column from one plain GET, `/api/jobListingMatches` with
+`current_stage_type_key=job_applied`, authenticated by the session cookie. Injected into
+the signed-in tab, the script asks for that list itself, newest submission first at 500
+a page, and downloads the same merged file this panel does — no scrolling, no clicks.
+The `applypass-inbound` skill's Step 0 drives it.
 
-It refuses pages that aren't from Job Applied (the same endpoint answers for Job
-Matches), picks the next arrow by position because both arrows share a class, and parks
-as `stuck` rather than failing when the app ignores a synthetic click. Its pure helpers
-are covered by `inpage.test.mjs`.
+It refuses a page holding records from outside the Application column, stops at the
+incremental cutoff, re-reads page 1 when applications land mid-run, and reports a
+signed-out session rather than capturing nothing. Its helpers, the paging loop included,
+are covered by `inpage.test.mjs` against a fake ApplyPass.
 
 ## Install
 
@@ -37,8 +40,10 @@ none, so the manifest has no `permissions` block at all.
 
 1. Open ApplyPass, open DevTools, select the **ApplyPass Capture** panel.
 2. **Reload the page.** The panel only sees requests made while it is listening.
-3. Page through your matches. Each recognized response appears as a row showing how many
-   records it held and how many were new.
+3. Scroll the Application column to the bottom. Each recognized response appears as a
+   row showing how many records it held and how many were new. The board loads Job
+   Matches from the same endpoint, so those responses appear too; their records are
+   unsubmitted, and the parser drops them.
 4. **Download JSON**, then move it into the inbox — the panel prints this exact command
    with the real filename after each download:
 
@@ -55,7 +60,8 @@ after each run.
 ## How a response is recognized
 
 Not by URL. `detect.mjs` walks the parsed body and returns the first array whose elements
-carry `_api_c2_match_id`, so the envelope's name and nesting depth don't matter and no
+carry a match id — `match_id` from the Next.js app, `_api_c2_match_id` from the Bubble
+app before it — so the envelope's name and nesting depth don't matter and no
 domain is hardcoded. `scripts/parse_applied_jobs.py:273-274` already unwraps `data`,
 `results` *and* `matches` — three fallbacks nobody writes speculatively — which is why
 keying on the records rather than their container is the safer bet.
@@ -66,7 +72,7 @@ records with them — re-fetch those pages.
 
 ## Deduping
 
-The panel dedupes on `_api_c2_match_id` so re-paginating is harmless. That is deduping
+The panel dedupes on the match id so re-paginating is harmless. That is deduping
 **this capture**, not the tracker's contents — the DB's key is
 `(company, date_added, position_title, link)`, a different thing entirely. The parser's
 NEW/DUP report and the skill's row-count check remain the only authority on real
