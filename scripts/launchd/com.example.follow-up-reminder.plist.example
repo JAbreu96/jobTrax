@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
+        <string>HOME_PATH/Applications/Agents/Follow-up Reminder.app/Contents/MacOS/follow-up-reminder</string>
         <string>REPO_PATH/scripts/run-follow-up-reminder.sh</string>
     </array>
 

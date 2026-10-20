@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
+        <string>HOME_PATH/Applications/Agents/Export Jobs CSV.app/Contents/MacOS/export-jobs-csv</string>
         <string>REPO_PATH/scripts/run-export-jobs-csv.sh</string>
     </array>
 
