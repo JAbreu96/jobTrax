@@ -6,7 +6,7 @@
 	<string>com.example.inbox-triage</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/bash</string>
+		<string>HOME_PATH/Applications/Agents/Inbox Triage.app/Contents/MacOS/inbox-triage</string>
 		<string>REPO_PATH/scripts/run-inbox-triage.sh</string>
 	</array>
 	<key>RunAtLoad</key>

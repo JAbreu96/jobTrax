@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
+        <string>HOME_PATH/Applications/Agents/Work Search Record.app/Contents/MacOS/work-search-record</string>
         <string>REPO_PATH/scripts/run-work-search-record.sh</string>
     </array>
 

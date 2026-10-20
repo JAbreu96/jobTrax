@@ -14,6 +14,8 @@ launchd does not expand `~` or `$HOME` in a plist, which is why these are
 absolute paths rather than variables.
 
 ```bash
+BUNDLE_PREFIX=com.example scripts/launchd/build-wrapper.sh inbox-triage "Inbox Triage"
+
 sed -e "s#REPO_PATH#$PWD#g" -e "s#HOME_PATH#$HOME#g" \
     scripts/launchd/com.example.inbox-triage.plist.example \
     > ~/Library/LaunchAgents/com.example.inbox-triage.plist
@@ -24,6 +26,44 @@ launchctl list | grep com.example        # loaded?
 
 `launchctl unload <path>` stops one. Rename the `com.example.` prefix to
 whatever you like — the label inside the file must match the filename.
+
+## Wrapper apps
+
+Each plist runs its script through a small app in `~/Applications/Agents/`,
+not through `/bin/bash`. macOS names a background item, and every permission
+prompt, after the process launchd started, never after the label. With
+`/bin/bash` that meant a row of identical "bash" entries in Login Items. Privacy
+prompts were worse: macOS skipped bash and blamed the Claude CLI binary by its
+filename, so the prompt read *"2.1.304" would like to access files in your
+Documents folder*. The grant was tied to that versioned path, so it reset on
+every CLI update, and an unattended run sat blocked on the prompt for hours.
+
+A wrapper app takes the blame under its own name ("Inbox Triage would like
+to access…"), and a grant sticks to the app across Claude updates.
+
+Build the app before loading its plist. `BUNDLE_PREFIX` should match your
+label prefix, and the display name must match the path in the plist:
+
+```bash
+while IFS='|' read -r id name; do
+  BUNDLE_PREFIX=com.example scripts/launchd/build-wrapper.sh "$id" "$name"
+done <<'EOF'
+application-digest|Application Digest
+applypass-inbound|ApplyPass Inbound
+archive-jobs|Archive Jobs
+claude-remote-control|Claude Remote Control
+export-jobs-csv|Export Jobs CSV
+follow-up-reminder|Follow-up Reminder
+inbox-triage|Inbox Triage
+work-search-record|Work Search Record
+EOF
+```
+
+`launcher.c` spawns the script and waits rather than exec-ing it; exec would
+hand the identity straight back to bash. The app is ad-hoc signed, so its
+identity is a hash of the binary: a rebuild that changes the binary makes macOS
+ask for each permission again. Each job asks once, on its first run after the
+switch, so expect one prompt per job.
 
 ## Before you load anything
 

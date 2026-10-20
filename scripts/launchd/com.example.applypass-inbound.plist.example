@@ -6,7 +6,7 @@
 	<string>com.example.applypass-inbound</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/bin/bash</string>
+		<string>HOME_PATH/Applications/Agents/ApplyPass Inbound.app/Contents/MacOS/applypass-inbound</string>
 		<string>REPO_PATH/scripts/run-applypass-inbound.sh</string>
 	</array>
 	<key>RunAtLoad</key>
