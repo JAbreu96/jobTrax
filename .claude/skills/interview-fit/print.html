@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- slot: title — "<YYYY-MM-DD> <Company> - <Interviewer> - Fit" -->
+<title></title>
+<style>
+  @page { size: Letter; margin: 0.6in; }
+
+  body {
+    max-width: 7.3in;
+    margin: 0 auto;
+    padding: 16px;
+    background: #fff;
+    color: #111;
+    font: 12pt/1.5 Verdana, Arial, sans-serif;
+    text-align: left;
+  }
+
+  h1 { font-size: 17pt; margin: 0 0 0.6em; }
+  h2 {
+    font-size: 14pt;
+    margin: 1.4em 0 0.5em;
+    padding-top: 0.4em;
+    border-top: 2px solid #111;
+    break-after: avoid;
+  }
+  h3 { font-size: 12.5pt; margin: 1em 0 0.4em; break-after: avoid; }
+
+  p, li { margin: 0.3em 0; }
+  ul { padding-left: 1.2em; }
+
+  /* Italics are hard to track across a line; emphasis is weight, never slant. */
+  em, i { font-style: normal; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; margin: 0.5em 0 0.8em; }
+  th, td { border: 1px solid #555; padding: 5px 7px; vertical-align: top; text-align: left; }
+  th { background: #eee; }
+  tr { break-inside: avoid; }
+
+  /* The three questions for a short call: bold plus a fill, so they survive grayscale. */
+  tr.top3 td { font-weight: 700; background: #e3e3e3; }
+
+  .connection { break-inside: avoid; }
+
+  blockquote {
+    margin: 0.6em 0;
+    padding: 0.4em 0 0.4em 0.9em;
+    border-left: 4px solid #111;
+    font-size: 13pt;
+  }
+
+  .checklist { list-style: none; padding-left: 0; }
+  .checklist li::before { content: "☐ "; }
+
+  @media print {
+    body { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<!-- Fill each slot with that note section, in note order. Same content as the note, not a summary.
+     Tables become <table>, the talk track a <blockquote>, Before the round a <ul class="checklist">,
+     each top-3 connection a <div class="connection">, and each ★ question row <tr class="top3">. -->
+
+<!-- slot: h1 title -->
+
+<!-- slot: ## Context -->
+
+<!-- slot: ## 1. Positioning -->
+
+<!-- slot: ## 2. The shared problem -->
+
+<!-- slot: ## 3. Project fit -->
+
+<!-- slot: ## 4. Top 3 connections -->
+
+<!-- slot: ## 5. Talk track -->
+
+<!-- slot: ## 6. Gaps -->
+
+<!-- slot: ## 7. Coach questions -->
+
+<!-- slot: ## 8. Questions to ask -->
+
+<!-- slot: ## Before the round -->
+
+<!-- slot: ## Sources -->
+
+<!-- slot: ## My notes -->
+
+</body>
+</html>

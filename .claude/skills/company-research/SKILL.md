@@ -1,6 +1,6 @@
 ---
 name: company-research
-description: Company research before an interview — what the product does and how it works, how it started versus now, customers, competitors, the hard engineering problems, team, funding and recent news — saved to the tracker's Company tab. Use when the user asks to research a company or employer, or asks what a company's product does or how it works.
+description: Company research before an interview — what the product does and how it works, how it started versus now, customers, competitors, the hard engineering problems, team, funding and recent news — saved to the tracker's Company tab, then hands off to interview-fit for the fit analysis and the questions to ask. Use when the user asks to research a company or employer, or asks what a company's product does or how it works.
 argument-hint: "[company, website or job URL] [optional: role, interviewer, interview date, refresh]"
 ---
 
@@ -34,8 +34,11 @@ interview date, and the word `refresh`.
   with different company strings match, ask which one.
 - With no match, the canonical name is the company's short name from its own website, and the
   job is **untracked**.
+- When `$ARGUMENTS` ends with `called by interview-fit`, that skill started this run and is
+  waiting for it (Step 7).
 
-Done when the canonical name is written down, with tracked or untracked.
+Done when the canonical name is written down, with tracked or untracked, and who started the
+run.
 
 ## Step 2 — Fresh or stale
 
@@ -103,8 +106,8 @@ order:
    in-house" when that is the real rival. The claimed edge, and one counter-argument marked
    `[inferred]`.
 6. **Hard engineering problems.** Three to six problems an engineer here would face — data
-   quality, entity resolution, scale, evaluation, integrations. These are what a candidate's
-   experience gets measured against.
+   quality, entity resolution, scale, evaluation, integrations. interview-fit measures the
+   candidate's experience against these.
 7. **Where it's heading.** The stated roadmap, hiring signals and launches.
 8. **Open questions.** Three to seven facts the research could not settle, phrased as things to
    find out.
@@ -134,7 +137,7 @@ skill does not write. Then read the profile back with `mcp__job_tracker__get_com
 
 Done when `researched_at` is today and every section you passed comes back as written.
 
-## Step 7 — Report
+## Step 7 — Report and hand off
 
 In chat, six lines at most:
 
@@ -145,7 +148,11 @@ In chat, six lines at most:
 - sections written, kept and replaced;
 - how many sources were used.
 
-Done when all six lines are in the chat.
+Research always ends with the fit analysis and its questions to ask. When interview-fit started
+this run, return to its Step 3. Otherwise invoke `interview-fit` with the Skill tool, passing
+the canonical name and any role, interviewer and date from `$ARGUMENTS`.
+
+Done when the six lines are in the chat and interview-fit is running, or has resumed.
 
 ## Profile format
 
