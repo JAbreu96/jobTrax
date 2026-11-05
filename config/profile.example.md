@@ -42,6 +42,12 @@ ws5_output_dir: ~/Desktop/WS5_work_search_records
 # a local session where that folder actually exists. Blank disables story
 # lookup; skills that need it should say so rather than guessing a path.
 star_vault_path: ""
+
+# Local folder of per-company notes (e.g. an Obsidian vault), one folder per
+# company: <Company>/<Company>.md as the hub, beside its job description and
+# round notes. interview-fit saves its fit analysis there. Same caveat as above:
+# a path on YOUR machine, local sessions only.
+companies_path: ""
 ---
 
 # Profile

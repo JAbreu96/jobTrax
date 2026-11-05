@@ -3,7 +3,7 @@
 A job search that runs itself, mostly.
 
 A local SQLite database holds every application. A Flask GUI shows it three ways.
-An MCP server puts it in front of Claude Code, and fifteen skills do the work
+An MCP server puts it in front of Claude Code, and sixteen skills do the work
 around it: read the inbox and reconcile what arrived, score postings against your
 resume, draft outreach, file the handful of things that actually need you, and
 fill in New York's unemployment paperwork.
@@ -238,7 +238,8 @@ Invoke any of them in Claude Code as `/skill-name [args]`.
 | `job-digest` | print every tracked job as applied / stale / not-applied | `job_tracker` |
 | `source-jobs` | X-ray Ashby, Greenhouse, Lever and Notion; score hits against your resume | web search, Drive |
 | `resume-review` | recruiter-style resume-vs-JD scoring, bullet rewrites, ATS scan | Docs, Drive |
-| `company-research` | interview briefing: what the product does and how it works, customers, competitors, team, funding, news. Saves to the Company tab | web search, `job_tracker` |
+| `company-research` | interview briefing: what the product does and how it works, customers, competitors, team, funding, news. Saves to the Company tab, then runs `interview-fit` | web search, `job_tracker` |
+| `interview-fit` | map your projects onto the company: positioning, fit, gaps, a talk track, questions to ask. Saves a note in the company's folder, a printable page and Prep-tab questions | `star_vault_path`, `companies_path`, Drive, `job_tracker` |
 | `outreach-email` | draft a referral email or a LinkedIn note | `gmail_personal` |
 | `stacked-pr` | ship a multi-phase feature as a stack of PRs | git, `gh` |
 
@@ -383,7 +384,7 @@ src/
   config.py         every per-install value resolves here
 mcp_servers/
   job_tracker/      the MCP server — 23 tools over jobs_db
-.claude/skills/     fifteen skills
+.claude/skills/     sixteen skills
 scripts/
   run-*.sh          scheduled entry points
   launchd/          plist templates
