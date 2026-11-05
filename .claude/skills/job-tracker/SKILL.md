@@ -217,7 +217,7 @@ Wait for their response. If they say yes, create a tailored resume copy by runni
 - The resume already read in Step 4
 - Company name extracted from Step 2
 
-If they say no (or don't respond), stop here.
+If they say no (or don't respond), go to Step 8.
 
 Follow the resume-review skill exactly:
 1. Run recruiter analysis (match score + gaps) — you already have this from Step 4, so skip to rewrites
@@ -300,4 +300,22 @@ Follow the resume-review skill exactly:
    Append to the result report:
    > 💾 Saved to `~/Documents/resumes/{owner_name} — Resume — {Company}.pdf`
 
-If the match score is **below 65**, skip this step entirely.
+If the match score is **below 65**, skip this step. Either way, finish with Step 8.
+
+---
+
+## Step 8 — Offer company research
+
+Once Step 7 is settled, ask the user:
+
+> Want me to research **{Company}** and map your STAR stories onto this role?
+
+It is an offer rather than a default run because the fit analysis at the end of it writes a
+vault note, a print page and Prep-tab questions, and most tracked jobs never reach an interview.
+
+If they say yes, invoke `company-research` with the Skill tool, passing the row's `company`
+string from Step 5 character for character, then the posting URL when the row has one, then
+`role: {title}`. The Company tab finds a profile by that exact string. company-research hands
+off to `interview-fit` when it finishes, so this one call runs both. If they say no, stop.
+
+Done when the user has answered and, on a yes, company-research is running.

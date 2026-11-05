@@ -234,7 +234,7 @@ Invoke any of them in Claude Code as `/skill-name [args]`.
 
 | Skill | Does | Needs |
 |---|---|---|
-| `job-tracker` | fetch a posting URL, extract it, log it, optionally tailor a resume copy | `job_tracker`, Drive |
+| `job-tracker` | fetch a posting URL, extract it, log it, then offer a tailored resume copy and `company-research` | `job_tracker`, Drive |
 | `job-digest` | print every tracked job as applied / stale / not-applied | `job_tracker` |
 | `source-jobs` | X-ray Ashby, Greenhouse, Lever and Notion; score hits against your resume | web search, Drive |
 | `resume-review` | recruiter-style resume-vs-JD scoring, bullet rewrites, ATS scan | Docs, Drive |
