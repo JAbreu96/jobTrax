@@ -12,15 +12,18 @@ overclaim, so every link carries its evidence and its caveat.
 
 ## Step 0 — Load the profile
 
-Read `config/profile.md` for `owner_name`, `star_vault_path` and `resume_doc_id`, and its
-`## Sender background` section. If the file does not exist, tell the user to run
-`cp config/profile.example.md config/profile.md` and fill it in, and stop.
+Read `config/profile.md` for `owner_name`, `star_vault_path`, `companies_path` and
+`resume_doc_id`, and its `## Sender background` section. If the file does not exist, tell the
+user to run `cp config/profile.example.md config/profile.md` and fill it in, and stop.
 
 The vault holds the facts this analysis stands on. If `{star_vault_path}` is blank, or this
 session cannot read it (a remote session has no access to the user's machine), stop. Ask the
 user to run from a local session, or to paste the STAR stories that matter.
 
-Done when the three keys are known and `{star_vault_path}/STAR Index.md` has been read, its
+`{companies_path}` is where the note is saved (Step 8). If it is blank, ask the user for their
+company-notes folder and to add it to the profile.
+
+Done when the four keys are known and `{star_vault_path}/STAR Index.md` has been read, its
 Docket included.
 
 ## Step 1 — Pin down the round
@@ -76,9 +79,9 @@ Done when every need has a tag and the JD source is recorded.
 ## Step 4 — Read earlier rounds
 
 Read in full every earlier-round source for this company: call transcripts (found as in
-company-research Step 3, source 4), notes in `{star_vault_path}/Interview Analyses/` and
-`{star_vault_path}/Fit Analyses/` that name it, and its entries in `Questions I Failed At.md`.
-Take from them:
+company-research Step 3, source 4), notes in `{star_vault_path}/Interview Analyses/` that name
+it, every note in its **company folder** (Step 8) — hub, job description, round notes and
+earlier fit analyses — and its entries in `Questions I Failed At.md`. Take from them:
 
 - what the company said it needs, quoted with date and `mm:ss`, added to the needs;
 - what the candidate claimed, so the story stays consistent;
@@ -153,11 +156,21 @@ earlier round, the ★ rows come first, and the talk track ends on ★1.
 
 ## Step 8 — Save the note and the print page
 
-Save the note to
-`{star_vault_path}/Fit Analyses/<YYYY-MM-DD> <Company> - <Interviewer> - Fit.md`, dated by the
-round, creating the folder if needed. The " - Fit" suffix keeps the name distinct from the
-round's later Interview Analyses note, so `[[links]]` never collide. When the file exists,
-carry its `## My notes` section over word for word and replace the rest.
+The note lives in the **company folder**: the folder in `{companies_path}` named for the
+company. Match the canonical name case-insensitively, as the whole name or its first word
+("Acme" finds `Acme AI/`), and use that folder's name as `<Folder>`. With no match, create
+`{companies_path}/<canonical name>/`.
+
+Save the note as `<Folder>/<Folder> - Fit - <YYYY-MM-DD> <Interviewer>.md`, dated by the round.
+When the file exists, carry its `## My notes` section over word for word and replace the rest.
+
+Link it from the hub, `<Folder>/<Folder>.md`:
+
+- When the hub has a `**Fit analysis:**` line, point it at this note.
+- Otherwise add `**Fit analysis:** [[<note name>]]` on the line after `**Job description:**`,
+  or after the hub's opening block when that line is missing.
+- With no hub, create one: `Role: <role>`, `Posting: <link>`, a blank line, then the
+  `**Fit analysis:**` line. Change nothing else in an existing hub.
 
 Run `bash ~/.claude/skills/readable-output/check.sh "<note path>"` and fix every finding in
 prose.
@@ -167,8 +180,8 @@ Build the print page from the saved note. Copy `print.html` from this skill's fo
 a print shell, not a summary. Render `[[links]]` as plain names, and give ★ rows
 `class="top3"`. Save it next to the note, with the same name and `.html`.
 
-Done when both files exist, check.sh reports no prose findings, and the note's `## ` heading
-count equals the page's `<h2>` count.
+Done when both files exist, the hub links the note, check.sh reports no prose findings, and
+the note's `## ` heading count equals the page's `<h2>` count.
 
 ## Step 9 — Update the tracker
 
@@ -178,7 +191,7 @@ company-research, Profile format):
 - a `**Positioning:**` line and a `**Shared problem:**` line;
 - `### Top connections`, three bullets of `<project> → <need> (<fit>)`;
 - `### Gaps to handle`, up to three bullets;
-- last, the **marker** line: ``**Full analysis:** `Fit Analyses/<file name>.md` (<date>)``.
+- last, the **marker** line: ``**Full analysis:** `<Folder>/<file name>.md` (<date>)``.
 
 Read the profile with `mcp__job_tracker__get_company_profile` first. Replace `why_me` when it
 is empty or its last line is a marker. Anything else is the candidate's own writing: show it,
@@ -221,7 +234,9 @@ Done when all six are in the chat.
 tags:
   - type/fit-analysis
 ---
-# <YYYY-MM-DD> <Company> - <Interviewer> - Fit
+Back to [[<Folder>]]
+
+# <Folder> - Fit - <YYYY-MM-DD> <Interviewer>
 
 ## Context
 Table: Company | Role | Round (interviewer, their role) | Date | JD source | Research date | Earlier rounds.

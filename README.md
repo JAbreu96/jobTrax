@@ -239,7 +239,7 @@ Invoke any of them in Claude Code as `/skill-name [args]`.
 | `source-jobs` | X-ray Ashby, Greenhouse, Lever and Notion; score hits against your resume | web search, Drive |
 | `resume-review` | recruiter-style resume-vs-JD scoring, bullet rewrites, ATS scan | Docs, Drive |
 | `company-research` | interview briefing: what the product does and how it works, customers, competitors, team, funding, news. Saves to the Company tab, then runs `interview-fit` | web search, `job_tracker` |
-| `interview-fit` | map your projects onto the company: positioning, fit, gaps, a talk track, questions to ask. Saves a vault note, a printable page and Prep-tab questions | `star_vault_path`, Drive, `job_tracker` |
+| `interview-fit` | map your projects onto the company: positioning, fit, gaps, a talk track, questions to ask. Saves a note in the company's folder, a printable page and Prep-tab questions | `star_vault_path`, `companies_path`, Drive, `job_tracker` |
 | `outreach-email` | draft a referral email or a LinkedIn note | `gmail_personal` |
 | `stacked-pr` | ship a multi-phase feature as a stack of PRs | git, `gh` |
 
