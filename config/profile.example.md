@@ -36,6 +36,12 @@ resume_folder_id: ""
 # Only relevant if you claim New York unemployment.
 ws5_record_start: ""
 ws5_output_dir: ~/Desktop/WS5_work_search_records
+
+# Local folder holding your STAR story notes (e.g. an Obsidian vault). This is a
+# path on YOUR machine, not inside this repo — skills that read it only work in
+# a local session where that folder actually exists. Blank disables story
+# lookup; skills that need it should say so rather than guessing a path.
+star_vault_path: ""
 ---
 
 # Profile
