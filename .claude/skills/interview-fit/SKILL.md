@@ -132,27 +132,37 @@ a ledger row the candidate owned, and each top-3 connection has a Verify first.
 
 ## Step 7 — Questions to ask, then the talk track
 
-Questions, for section 8, take the candidate's format: an **anchor** sentence, then one open
-question starting with "What" or "How".
+Questions, for section 8, take the candidate's format: one open question starting with "What"
+or "How", **specific** to this company. A specific question names one of their real things: a
+focus area, product, team, office or launch.
 
-- The anchor comes from the ledger — something the candidate built or did. Use the research (the
-  Company tab, a call quote) only when no ledger row fits.
-- Label each with its **pairing**, `<anchor> → <topic>`: "Founding engineer role → first 90
-  days".
+An **anchor** sentence goes before the question only when it **leads into** it.
+
+- The anchor comes from the ledger: something the candidate built or did. It leads into the
+  question when the question is the natural follow-up to it. Read the pair aloud to test it.
+  Example: "At my last job, I redesigned our data quality checks so they stopped failing good
+  exports. How much of your delivery checking is automated today?"
+- When no ledger row leads into the question, a line of the company's own context may set it
+  up. That line comes from the Company tab, a call quote or the JD. Otherwise the question
+  stands alone.
+- Label each with its **pairing**, `<anchor> → <topic>`, such as "Data quality checks →
+  delivery checks". A question with no anchor is labelled with its topic alone, such as "Team
+  and manager".
 - Seven at most. Mark the three for a short call with ★, and list them first.
-- Fit the interviewer. A CEO gets product, customers and direction. A CTO gets the data model,
-  agents and the quality bar. A peer gets the day-to-day.
+- Fit the interviewer. A recruiter gets the team, the manager, the focus area and where the team
+  sits. A CEO gets product, customers and direction. A CTO gets the data model, agents and the
+  quality bar. A peer gets the day-to-day.
 - Draw on product part 8. Skip anything an earlier round already asked, or the Company tab
   already answers.
 - Compensation, equity and logistics go on one "Save for later" line, outside the seven.
-- Two sentences each, written to be said aloud.
+- Two sentences at most, written to be said aloud.
 
 The talk track, for section 5: first person, 60–90 seconds aloud. In order: their problem in
 their words → the project that met it, with its metric → what transfers → one gap, owned
 honestly → ★1, word for word.
 
-Done when every question pairs a cited anchor with a What or How question, none repeats an
-earlier round, the ★ rows come first, and the talk track ends on ★1.
+Done when every question is specific and starts with What or How, every anchor leads into its
+question, none repeats an earlier round, the ★ rows come first, and the talk track ends on ★1.
 
 ## Step 8 — Save the note and the print page
 
@@ -172,6 +182,10 @@ Link it from the hub, `<Folder>/<Folder>.md`:
 - With no hub, create one: `Role: <role>`, `Posting: <link>`, a blank line, then the
   `**Fit analysis:**` line. Change nothing else in an existing hub.
 
+Before saving, write the **Glossary** from the finished note: every acronym and industry term
+it uses, from the company's domain (ERP, CSRD), its stack (Temporal, DuckDB) and interview
+jargon (fit-gap, cutover). Spell each acronym out, then say what it means in plain words.
+
 Run `bash ~/.claude/skills/readable-output/check.sh "<note path>"` and fix every finding in
 prose.
 
@@ -180,8 +194,9 @@ Build the print page from the saved note. Copy `print.html` from this skill's fo
 a print shell, not a summary. Render `[[links]]` as plain names, and give ★ rows
 `class="top3"`. Save it next to the note, with the same name and `.html`.
 
-Done when both files exist, the hub links the note, check.sh reports no prose findings, and
-the note's `## ` heading count equals the page's `<h2>` count.
+Done when both files exist, the hub links the note, every acronym in the note has a Glossary
+row, check.sh reports no prose findings, and the note's `## ` heading count equals the page's
+`<h2>` count.
 
 ## Step 9 — Update the tracker
 
@@ -241,6 +256,9 @@ Back to [[<Folder>]]
 ## Context
 Table: Company | Role | Round (interviewer, their role) | Date | JD source | Research date | Earlier rounds.
 Then "Their product", five rows at most: what it does · for whom · how it works · the shift · the hardest problem.
+
+## Glossary
+Table: Term | Plain meaning | Why it matters here. Written last (Step 8), placed here so it is read first.
 
 ## 1. Positioning
 "Your strongest positioning is not <X>. It's <Y>." Then two lines at most on why.
