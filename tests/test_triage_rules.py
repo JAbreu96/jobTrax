@@ -10,11 +10,15 @@ Addresses come from the fixture profile pinned in conftest, not from whatever
 `config/profile.md` is on the machine running this.
 """
 
+import pytest
+
 from src.triage_rules import (
     Rejection,
     contains_ask,
     detect_closing_statement,
     detect_rejection,
+    email_domain,
+    is_first_party,
     is_from_owner,
     normalize_subject,
     strip_html,
@@ -405,3 +409,49 @@ def test_moving_forward_positively_is_still_not_a_rejection():
         "a technical interview.",
     ):
         assert detect_rejection(body) is None, body
+
+
+# ---------------------------------------------------- first-party senders
+# A recruiter at the hiring company goes to the front of the line, so a false
+# match is the expensive error: one agency marked DIRECT teaches the owner to
+# ignore the mark. Every unclear case is False.
+
+FIRST_PARTY_CASES = [
+    # sender,                     company,                    agency,        expected
+    ("jane@acme.com",             "Acme",                     "",            True),
+    ("jane@acmehq.com",           "Acme Inc.",                "",            True),
+    ("jane@careers.acme.co.uk",   "Acme",                     "",            True),
+    ("jane@getacme.io",           "Acme",                     "",            True),
+    ("jane@acme.com",             "Acme Labs",                "",            True),
+    ("jane@acme.com",             "Acme Technologies, Inc.",  "",            True),
+    ("Jane Doe <jane@acme.com>",  "Acme",                     "",            True),
+    ("JANE@ACME.COM",             "acme",                     "",            True),
+    # An agency names itself; an agency hiding its client files its own name
+    # as the company, so a filled agency is the only tell.
+    ("raj@staffco.com",           "Acme",                     "StaffCo",     False),
+    ("raj@staffcollc.com",        "StaffCo LLC",              "StaffCo LLC", False),
+    ("jane@acme.com",             "Acme",                     "Acme",        False),
+    ("raj@gmail.com",             "Acme",                     "",            False),
+    ("jane@gem.com",              "Acme",                     "",            False),
+    ("mail@ats.rippling.com",     "Acme",                     "",            False),
+    ("noreply@acme.com",          "Acme",                     "",            False),
+    ("newsletter@acme.com",       "Acme",                     "",            False),
+    ("jane@acmeview.ai",          "Acme",                     "",            False),
+    ("sam@acme.com",              "Globex",                   "",            False),
+    ("",                          "Acme",                     "",            False),
+    ("jane@acme.com",             "",                         "",            False),
+    ("not-an-address",            "Acme",                     "",            False),
+]
+
+
+@pytest.mark.parametrize("sender,company,agency,expected", FIRST_PARTY_CASES)
+def test_is_first_party(sender, company, agency, expected):
+    assert is_first_party(sender, company, agency) is expected
+
+
+def test_email_domain_reads_a_full_from_header():
+    assert email_domain("Jane Doe <Jane@Acme.COM>") == "acme.com"
+
+
+def test_email_domain_is_blank_without_an_address():
+    assert email_domain("not-an-address") == ""

@@ -23,6 +23,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from email.utils import parseaddr
 from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -340,3 +341,97 @@ def unescape_title(value: str) -> str:
     if "&" in out and re.search(r"&[a-zA-Z]+;|&#\d+;", out):
         out = html.unescape(out)          # doubly-escaped: &amp;amp;
     return re.sub(r"\s+", " ", out).strip()
+
+
+# ------------------------------------------------------ first-party senders
+# A recruiter who works at the hiring company goes to the front of the line.
+# The expensive error is a false match -- one agency marked DIRECT teaches the
+# owner to ignore the mark -- so every unclear input answers False.
+
+_FREE_MAIL = (
+    "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+    "yahoo.com", "icloud.com", "me.com", "aol.com", "proton.me",
+    "protonmail.com",
+)
+
+# Hiring tools and job boards send on a company's behalf from their own domain.
+# Matched against the main label, so ats.rippling.com is caught too.
+_RELAY_LABELS = (
+    "greenhouse", "lever", "ashbyhq", "gem", "rippling", "workday",
+    "myworkday", "paraform", "dice", "indeed", "linkedin", "smartrecruiters",
+    "workable", "jobvite", "icims",
+)
+
+# A company's own address that no person writes from.
+_NO_PERSON_LOCALS = (
+    "noreply", "no-reply", "donotreply", "do-not-reply", "newsletter", "news",
+    "notifications", "marketing", "info", "hello",
+)
+
+_SECOND_LEVEL = ("co", "com", "org", "net", "ac", "gov")   # acme.co.uk
+
+_COMPANY_FILLER = (
+    "inc", "llc", "ltd", "corp", "corporation", "co", "company", "plc",
+    "gmbh", "technologies", "technology", "holdings",
+)
+
+_AFFIX_SUFFIXES = ("hq", "labs", "ai", "io", "app", "team", "careers", "jobs",
+                   "tech", "group", "inc")
+_AFFIX_PREFIXES = ("get", "try", "join", "use")
+
+
+def email_domain(sender: str) -> str:
+    """The lowercased host of a bare address or a full From header; "" if none."""
+    _, addr = parseaddr(sender or "")
+    if "@" not in addr:
+        return ""
+    return addr.rsplit("@", 1)[1].strip().lower()
+
+
+def _main_label(domain: str) -> str:
+    """careers.acme.co.uk -> acme. The label a company names its domain after."""
+    labels = [l for l in domain.split(".") if l]
+    if len(labels) < 2:
+        return ""
+    tld = labels.pop()
+    if len(labels) > 1 and len(tld) == 2 and labels[-1] in _SECOND_LEVEL:
+        labels.pop()
+    return labels[-1]
+
+
+def _company_key(company: str) -> str:
+    """'Acme Technologies, Inc.' -> 'acme'."""
+    words = re.findall(r"[a-z0-9]+", (company or "").lower())
+    return "".join(w for w in words if w not in _COMPANY_FILLER)
+
+
+def _differs_by_affix(longer: str, shorter: str) -> bool:
+    return any(longer == shorter + s for s in _AFFIX_SUFFIXES) or \
+        any(longer == p + shorter for p in _AFFIX_PREFIXES)
+
+
+def is_first_party(sender_email: str, company: str, agency: str = "") -> bool:
+    """
+    Whether the sender works at the company the role is at.
+
+    `agency` must be blank. When an agency hides its client, the skill files
+    the agency's own name as `company`, so its domain matches; a filled
+    `agency` is the only thing that tells that case apart. Free mail, hiring-
+    tool relays and no-person addresses (noreply@, newsletter@) never count.
+
+    The match is loose: acmehq.com, getacme.io and careers.acme.co.uk all
+    belong to Acme, and acme.com belongs to "Acme Labs".
+    """
+    if (agency or "").strip():
+        return False
+    domain = email_domain(sender_email)
+    key = _company_key(company)
+    if not domain or not key or domain in _FREE_MAIL:
+        return False
+    local = parseaddr(sender_email)[1].rsplit("@", 1)[0].lower()
+    if local in _NO_PERSON_LOCALS:
+        return False
+    label = _main_label(domain)
+    if not label or label in _RELAY_LABELS:
+        return False
+    return label == key or _differs_by_affix(label, key) or _differs_by_affix(key, label)
