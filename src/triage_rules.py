@@ -362,10 +362,15 @@ _RELAY_LABELS = (
     "workable", "jobvite", "icims",
 )
 
-# A company's own address that no person writes from.
+# A company's own address that no person writes from: a job blast under the
+# company's brand is not its recruiter writing. Matched against each piece of
+# the local part split on - _ . (after dropping a +tag), so jobs-noreply@ and
+# noreply-careers@ are caught too.
 _NO_PERSON_LOCALS = (
-    "noreply", "no-reply", "donotreply", "do-not-reply", "newsletter", "news",
-    "notifications", "marketing", "info", "hello",
+    "noreply", "donotreply", "newsletter", "newsletters", "news",
+    "notification", "notifications", "marketing", "info", "hello", "careers",
+    "jobs", "talent", "recruiting", "recruitment", "hiring", "hr", "team",
+    "alerts", "updates", "digest", "mailer", "support", "contact", "events",
 )
 
 _SECOND_LEVEL = ("co", "com", "org", "net", "ac", "gov")   # acme.co.uk
@@ -410,13 +415,23 @@ def _differs_by_affix(longer: str, shorter: str) -> bool:
         any(longer == p + shorter for p in _AFFIX_PREFIXES)
 
 
-def is_first_party(sender_email: str, company: str, agency: str = "") -> bool:
+def _is_no_person(local: str) -> bool:
+    """noreply@, jobs-noreply@, no_reply+abc@ -- an address no person writes from."""
+    local = local.split("+", 1)[0].lower()
+    squashed = re.sub(r"[-_.]", "", local)
+    if "noreply" in squashed or "donotreply" in squashed:
+        return True
+    return any(piece in _NO_PERSON_LOCALS for piece in re.split(r"[-_.]", local))
+
+
+def is_first_party(sender_email: str, company: str, agency: str) -> bool:
     """
     Whether the sender works at the company the role is at.
 
-    `agency` must be blank. When an agency hides its client, the skill files
-    the agency's own name as `company`, so its domain matches; a filled
-    `agency` is the only thing that tells that case apart. Free mail, hiring-
+    `agency` must be blank, and callers must pass it -- it has no default. When
+    an agency hides its client, the skill files the agency's own name as
+    `company`, so its domain matches; a filled `agency` is the only thing that
+    tells that case apart. Free mail, hiring-
     tool relays and no-person addresses (noreply@, newsletter@) never count.
 
     The match is loose: acmehq.com, getacme.io and careers.acme.co.uk all
@@ -428,8 +443,7 @@ def is_first_party(sender_email: str, company: str, agency: str = "") -> bool:
     key = _company_key(company)
     if not domain or not key or domain in _FREE_MAIL:
         return False
-    local = parseaddr(sender_email)[1].rsplit("@", 1)[0].lower()
-    if local in _NO_PERSON_LOCALS:
+    if _is_no_person(parseaddr(sender_email)[1].rsplit("@", 1)[0]):
         return False
     label = _main_label(domain)
     if not label or label in _RELAY_LABELS:

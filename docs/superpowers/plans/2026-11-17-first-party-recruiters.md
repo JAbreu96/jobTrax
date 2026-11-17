@@ -43,7 +43,7 @@
 **Interfaces:**
 - Produces:
   - `email_domain(sender: str) -> str`: the lowercased host of a bare address or a full From header; `""` when there's no address.
-  - `is_first_party(sender_email: str, company: str, agency: str = "") -> bool`.
+  - `is_first_party(sender_email: str, company: str, agency: str) -> bool` (`agency` required, added in review).
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_triage_rules.py`:
 

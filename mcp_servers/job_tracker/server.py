@@ -555,7 +555,8 @@ def record_recruiter_outreach(
     row, whatever `create_job_row` says. For `email` the tool checks the
     sender's domain against `company` itself (`is_first_party`), and `agency`
     must be blank. LinkedIn has no domain, so pass `first_party=True` when the
-    signature places them at the hiring company. The flag is stored on the
+    signature places them at the hiring company; it is ignored when `agency`
+    is filled. The flag is stored on the
     recruiter, and the job row's notes start with `1st-party recruiter (...)`.
     """
     if source not in jobs_db.RECRUITER_SOURCES:
@@ -571,7 +572,9 @@ def record_recruiter_outreach(
 
     sender = email or identity
     domain_match = source == "email" and is_first_party(sender, company, agency)
-    first = bool(first_party) or domain_match
+    # The caller's flag (LinkedIn's signature reading) gets the same guard the
+    # domain check has: an agency filed under its own name is never 1st party.
+    first = domain_match or (bool(first_party) and not (agency or "").strip())
     if first:
         create_job_row = True
         where = "LinkedIn" if source == "linkedin" else email_domain(sender)

@@ -42,23 +42,25 @@ body = open('/tmp/msg.txt').read()
 print('rejection:', detect_rejection(body))
 print('closing:  ', detect_closing_statement(body))
 print('ask:      ', contains_ask(body))
-print('direct:   ', is_first_party('Jane Doe <jane@acme.com>', 'Acme'))
+print('direct:   ', is_first_party('<From header>', '<company as filed>', '<agency as filed>'))
 "
 ```
 
 `normalize_subject`, `is_from_owner`, `strip_quoted_chain`, `strip_html` and
-`unescape_title` are there too.
-
-`is_first_party(sender, company, agency="")` answers *does this sender work at the
-hiring company?* It is `True` only when `agency` is blank and the sender's domain
-belongs to the company, matched loosely: `acmehq.com` and `getacme.io` both belong to
-Acme. Free mail, hiring-tool relays and `noreply@`-style addresses never count. It
-returns `False` whenever it is unsure. Every predicate strips the quoted reply chain first — a
+`unescape_title` are there too. Every predicate strips the quoted reply chain first — a
 fetched body carries the history inline, and a scan over the raw text reads sign-offs and
 rejection language out of *earlier* messages, so every long thread eventually looks closed.
 
 `scripts/read_mail.py` already applies `strip_html` and `strip_quoted_chain`, so its output
 goes straight to the predicates.
+
+`is_first_party(sender, company, agency)` answers *does this sender work at the hiring
+company?* It reads no body. It is `True` only when `agency` is blank and the sender's
+domain belongs to the company, matched loosely: `acmehq.com` and `getacme.io` both belong
+to Acme. Free mail, hiring-tool relays and addresses no person writes from (`noreply@`,
+`jobs@`, `talent@`, ...) never count. It returns `False` whenever it is unsure. `agency` has
+no default, on purpose: it is the only thing that separates a company's own recruiter from
+an agency filed under its own name.
 
 ---
 
@@ -284,13 +286,18 @@ mail is the most direct line to an employer this inbox carries, so it is never l
 score bar.
 
 For every message from a human that is tied to a company, run
-`is_first_party(<From header>, <company>)`, passing the hiring company, not an agency.
+`is_first_party(<From header>, <company as filed>, <agency as filed>)`, with the same
+`company` and `agency` Step 4 files. An agency hiding its client is filed under its own
+name, so its domain matches `company`: the filled `agency` is what stops it, and dropping
+that argument marks the agency 1st party.
 
 - **Email:** the function decides. Don't overrule a `False` by eye.
 - **LinkedIn** (`hit-reply@` / `inmail-hit-reply@`): there is no domain to check. It is 1st
-  party only when the signature or headline places the sender at the hiring company
-  ("Talent Acquisition at Acme", with the role at Acme). When the signature doesn't say, it
-  isn't.
+  party only when `agency` is blank **and** the signature or headline places the sender at
+  the hiring company ("Talent Acquisition at Acme", with the role at Acme). Never for an
+  undisclosed employer. When the signature doesn't say, it isn't.
+- **A pitch:** what decides is the `first_party` that `record_recruiter_outreach` returns in
+  Step 4, not this check. The row and the task then can't disagree.
 
 A 1st-party pitch for a role the user never applied to is always captured with
 `record_recruiter_outreach`, whatever its category, because the job row is part of the point.
@@ -400,7 +407,7 @@ same `message_id`:
 | `message_id`, `thread_id`, `subject` | from `scripts/read_mail.py` |
 | `notes` | the score and rationale, below |
 | `create_job_row` | `true` if the score clears 60, `false` otherwise — see below. The tool forces it to `true` for a 1st-party recruiter |
-| `first_party` | `true` for a LinkedIn recruiter whose signature places them at the hiring company; otherwise omit. The tool checks email domains itself |
+| `first_party` | `true` for a LinkedIn recruiter whose signature places them at the hiring company, with `agency` blank; otherwise omit. The tool checks email domains itself, and ignores this flag when `agency` is filled |
 
 When `create_job_row` is true it creates the job row at status `Tracking` with a deterministic
 synthetic link, so **re-processing the same email updates rather than duplicating** — and it
@@ -513,7 +520,8 @@ Only when the text genuinely is not available — Indeed's login-gated messages 
 
 ### 1st-party pitches run test 1 only
 
-A pitch from a 1st-party recruiter (Step 3) skips the 60 bar and tests 2 and 3. A company's
+A pitch whose `record_recruiter_outreach` call returned `first_party: true` (Step 4)
+skips the 60 bar and tests 2 and 3. A company's
 own recruiter writing about a role is worth an answer even when they phrase it as an FYI.
 Test 1 still applies: if the user spoke last, they are waiting on the recruiter and there is
 no task.
@@ -538,10 +546,12 @@ what keeps re-runs clean.
 - **Notes** — `thread:<Thread ID>` on the first line, then sender name and address, a
   verbatim quote of what they asked, any link or portal URL, the tracker status, and whether
   the company is tracked at all.
-- **1st-party tasks** — when the sender is 1st party (Step 3), these override the title and
-  due rules above. The title starts with `★ DIRECT · `, the task is due **today** (the day
-  triage runs), and the notes carry a `direct:` line, plus `Match Score: X/100` for a pitch.
-  For LinkedIn the line reads `direct: LinkedIn, signature names <company>`.
+- **1st-party tasks** — when the sender is 1st party (for a pitch, the tool's
+  `first_party: true`; otherwise Step 3's check), put `★ DIRECT · ` in front of the title
+  and keep its verb: an `unsure` item stays `★ DIRECT · Check …`, never `Reply to`. The
+  task is due **today** (the day triage runs), which replaces the due rule above. The notes
+  carry a `direct:` line, plus `Match Score: X/100` for a pitch. For LinkedIn the line reads
+  `direct: LinkedIn, signature names <company>`.
 
 ```
 ★ DIRECT · Reply to Jane Doe (Acme) — interested in the Senior Frontend role?
@@ -568,10 +578,16 @@ The notes are the point: the user should be able to act without going back to th
 ### Front of the line
 
 Google Tasks puts each new task at the top of the list, so an ordinary task created later,
-in this run or the next, would bury a `★ DIRECT` one. After every task for this run is
-created, call `mcp__gtasks__list`. Take the open tasks whose title starts with `★ DIRECT`,
-and `mcp__gtasks__move` each one with no `previous`, oldest due date first, so the newest
-ends on top. Do this on every run, even one that created no 1st-party task.
+in this run or the next, would bury a `★ DIRECT` one. Check the order on every run, even
+one that created no 1st-party task:
+
+1. After every task for this run is created, call `mcp__gtasks__list_with_tree` with
+   `taskListId: "@default"` (My Tasks). It lists in on-screen order.
+2. If every open `★ DIRECT` task already sits above every other open task, stop. Nothing
+   moves, which keeps a re-run at zero writes.
+3. Otherwise call `mcp__gtasks__move` with `taskListId: "@default"`, the task's id and no
+   `previous`, once per open `★ DIRECT` task, oldest due date first, so the newest ends on
+   top. `move` fails without `taskListId`.
 
 Moving is not completing or deleting, so "never destroy work" holds.
 

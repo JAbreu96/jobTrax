@@ -425,6 +425,7 @@ FIRST_PARTY_CASES = [
     ("jane@acme.com",             "Acme Labs",                "",            True),
     ("jane@acme.com",             "Acme Technologies, Inc.",  "",            True),
     ("Jane Doe <jane@acme.com>",  "Acme",                     "",            True),
+    ("jane.doe+x@acme.com",       "Acme",                     "",            True),
     ("JANE@ACME.COM",             "acme",                     "",            True),
     # An agency names itself; an agency hiding its client files its own name
     # as the company, so a filled agency is the only tell.
@@ -455,3 +456,19 @@ def test_email_domain_reads_a_full_from_header():
 
 def test_email_domain_is_blank_without_an_address():
     assert email_domain("not-an-address") == ""
+
+
+def test_is_first_party_requires_agency():
+    """A caller that drops `agency` loses the undisclosed-employer guard, so it can't."""
+    with pytest.raises(TypeError):
+        is_first_party("jane@acme.com", "Acme")
+
+
+@pytest.mark.parametrize("local", [
+    "careers", "jobs", "talent", "recruiting", "team", "no_reply", "noreply+abc",
+    "jobs-noreply", "noreply-careers", "notification", "updates", "digest",
+    "alerts", "newsletters",
+])
+def test_a_company_address_no_person_writes_from_is_not_first_party(local):
+    """A company's job blast under its own brand is not a recruiter writing."""
+    assert is_first_party(f"{local}@acme.com", "Acme", "") is False

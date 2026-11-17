@@ -537,6 +537,21 @@ def test_first_party_reprocessing_is_idempotent(srv):
     assert notes.count("1st-party recruiter") == 1
 
 
+def test_company_job_blast_address_gets_no_forced_row(srv):
+    out = _acme(srv, identity="jobs@acme.com", email="jobs@acme.com")
+    assert out["first_party"] is False and out["job_row_created"] is False
+    assert _call(srv.recruiter_roles) == []
+
+
+def test_linkedin_flag_is_ignored_when_an_agency_is_named(srv):
+    """An agency filed under its own name can't be flagged 1st party by its headline."""
+    out = _acme(srv, source="linkedin", identity="raj-staffco",
+                email="inmail-hit-reply@linkedin.com", account="alt",
+                company="StaffCo", agency="StaffCo", first_party=True)
+    assert out["first_party"] is False and out["job_row_created"] is False
+    assert _call(srv.list_recruiters)[0]["first_party"] is False
+
+
 def test_bad_source_is_rejected_not_raised(srv):
     out = _call(srv.record_recruiter_outreach, source="pigeon", identity="x",
                 company="C", position_title="T")

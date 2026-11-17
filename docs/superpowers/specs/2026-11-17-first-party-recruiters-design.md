@@ -54,7 +54,7 @@ for the same reason: stated in the instructions alone, it was not followed.
 ### 1. The match: `is_first_party` in `src/triage_rules.py`
 
 ```python
-def is_first_party(sender_email: str, company: str, agency: str = "") -> bool
+def is_first_party(sender_email: str, company: str, agency: str) -> bool
 ```
 
 True only when **both** hold:
