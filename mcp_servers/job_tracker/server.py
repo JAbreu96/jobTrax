@@ -6,6 +6,7 @@ from mcp.server.fastmcp import FastMCP
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from src import jobs_db  # noqa: E402
+from src.triage_rules import email_domain, is_first_party  # noqa: E402
 
 mcp = FastMCP("job-tracker")
 
@@ -476,6 +477,7 @@ def list_recruiters() -> list[dict]:
             "replies": r["reply_count"],
             "first_seen": r["first_seen"],
             "last_seen": r["last_seen"],
+            "first_party": bool(r.get("first_party")),
         }
         for r in jobs_db.get_recruiters()
     ]
@@ -524,6 +526,7 @@ def record_recruiter_outreach(
     thread_id: str = "",
     subject: str = "",
     create_job_row: bool = True,
+    first_party: bool = False,
 ) -> dict:
     """
     Captures ONE recruiter-sourced role. Call once per role, not once per email.
@@ -547,6 +550,13 @@ def record_recruiter_outreach(
     cold pitch and false-positive newsletter/content email that scores as
     `recruiter_outreach`. Before this parameter existed, every call created a
     row regardless of score, which this rule could never actually honor.
+
+    A recruiter who works at the hiring company (1st party) always gets the
+    row, whatever `create_job_row` says. For `email` the tool checks the
+    sender's domain against `company` itself (`is_first_party`), and `agency`
+    must be blank. LinkedIn has no domain, so pass `first_party=True` when the
+    signature places them at the hiring company. The flag is stored on the
+    recruiter, and the job row's notes start with `1st-party recruiter (...)`.
     """
     if source not in jobs_db.RECRUITER_SOURCES:
         return {"error": f"source must be one of: {', '.join(jobs_db.RECRUITER_SOURCES)}"}
@@ -559,9 +569,17 @@ def record_recruiter_outreach(
     title = position_title.strip()
     link = jobs_db.recruiter_link(source, identity.strip(), title)
 
+    sender = email or identity
+    domain_match = source == "email" and is_first_party(sender, company, agency)
+    first = bool(first_party) or domain_match
+    if first:
+        create_job_row = True
+        where = "LinkedIn" if source == "linkedin" else email_domain(sender)
+        notes = f"1st-party recruiter ({where})" + (f"\n{notes}" if notes else "")
+
     recruiter_id = jobs_db.upsert_recruiter(
         source=source, identity=identity.strip(), name=name, agency=agency,
-        email=email, seen_date=when,
+        email=email, seen_date=when, first_party=first,
     )
 
     if create_job_row:
@@ -594,7 +612,8 @@ def record_recruiter_outreach(
             account=account, message_id=message_id, thread_id=thread_id,
         )
     result = {"recruiter_id": recruiter_id, "company": company.strip(),
-              "position_title": title, "job_row_created": create_job_row}
+              "position_title": title, "job_row_created": create_job_row,
+              "first_party": first}
     if create_job_row:
         result["link"] = link
     return result

@@ -464,10 +464,12 @@ def test_sub_threshold_then_qualifying_role_creates_the_row_on_the_second_call(s
     each call's create_job_row is independent, not sticky per recruiter."""
     _call(srv.record_recruiter_outreach,
           source="email", identity="dana@agency.com", company="Agency",
+          agency="Agency",
           position_title="junk role", occurred_date="2026-09-20",
           message_id="msg-1", create_job_row=False)
     _call(srv.record_recruiter_outreach,
           source="email", identity="dana@agency.com", company="Agency",
+          agency="Agency",
           position_title="Senior Backend Engineer", occurred_date="2026-09-23",
           message_id="msg-2", create_job_row=True)
 
@@ -475,6 +477,64 @@ def test_sub_threshold_then_qualifying_role_creates_the_row_on_the_second_call(s
     assert len(roles) == 1
     assert roles[0]["position_title"] == "Senior Backend Engineer"
     assert len(srv.jobs_db.get_recruiter_messages()) == 2  # both messages counted
+
+
+# A recruiter at the hiring company always gets a row, whatever the score.
+
+def _acme(srv, **kw):
+    base = dict(source="email", identity="jane@acme.com", email="jane@acme.com",
+                company="Acme", position_title="Senior Frontend Engineer",
+                occurred_date="2026-11-17", name="Jane Doe", message_id="msg-1",
+                notes="Match Score: 40/100", create_job_row=False)
+    return _call(srv.record_recruiter_outreach, **{**base, **kw})
+
+
+def test_first_party_email_gets_a_row_below_the_bar(srv):
+    out = _acme(srv)
+    assert out["first_party"] is True and out["job_row_created"] is True
+    assert "link" in out
+    assert len(_call(srv.recruiter_roles)) == 1
+    assert _call(srv.list_recruiters)[0]["first_party"] is True
+
+
+def test_first_party_row_notes_name_the_domain(srv):
+    out = _acme(srv)
+    notes = srv.jobs_db.find_job_by_link(out["link"])["notes"]
+    assert notes.startswith("1st-party recruiter (acme.com)")
+    assert "Match Score: 40/100" in notes
+
+
+def test_agency_sender_is_not_first_party(srv):
+    out = _acme(srv, identity="raj@staffco.com", email="raj@staffco.com",
+                agency="StaffCo")
+    assert out["first_party"] is False and out["job_row_created"] is False
+    assert _call(srv.recruiter_roles) == []
+
+
+def test_undisclosed_employer_is_not_first_party(srv):
+    out = _acme(srv, identity="raj@staffcollc.com", email="raj@staffcollc.com",
+                company="StaffCo LLC", agency="StaffCo LLC")
+    assert out["first_party"] is False
+
+
+def test_linkedin_first_party_needs_the_flag(srv):
+    """InMail arrives from a relay, so only triage's reading of the signature counts."""
+    li = dict(source="linkedin", identity="jane-doe",
+              email="inmail-hit-reply@linkedin.com", account="alt")
+    assert _acme(srv, **li)["first_party"] is False
+    out = _acme(srv, **li, message_id="msg-2", first_party=True)
+    assert out["first_party"] is True and out["job_row_created"] is True
+    assert srv.jobs_db.find_job_by_link(out["link"])["notes"].startswith(
+        "1st-party recruiter (LinkedIn)")
+
+
+def test_first_party_reprocessing_is_idempotent(srv):
+    out = _acme(srv)
+    _acme(srv)
+    assert len(_call(srv.recruiter_roles)) == 1
+    assert len(srv.jobs_db.get_recruiters()) == 1
+    notes = srv.jobs_db.find_job_by_link(out["link"])["notes"]
+    assert notes.count("1st-party recruiter") == 1
 
 
 def test_bad_source_is_rejected_not_raised(srv):
