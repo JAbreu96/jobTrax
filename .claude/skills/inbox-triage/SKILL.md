@@ -37,11 +37,12 @@ re-derive them by eye:
 
 ```bash
 python3 -c "
-from src.triage_rules import detect_rejection, detect_closing_statement, contains_ask
+from src.triage_rules import detect_rejection, detect_closing_statement, contains_ask, is_first_party
 body = open('/tmp/msg.txt').read()
 print('rejection:', detect_rejection(body))
 print('closing:  ', detect_closing_statement(body))
 print('ask:      ', contains_ask(body))
+print('direct:   ', is_first_party('<From header>', '<company as filed>', '<agency as filed>'))
 "
 ```
 
@@ -52,6 +53,14 @@ rejection language out of *earlier* messages, so every long thread eventually lo
 
 `scripts/read_mail.py` already applies `strip_html` and `strip_quoted_chain`, so its output
 goes straight to the predicates.
+
+`is_first_party(sender, company, agency)` answers *does this sender work at the hiring
+company?* It reads no body. It is `True` only when `agency` is blank and the sender's
+domain belongs to the company, matched loosely: `acmehq.com` and `getacme.io` both belong
+to Acme. Free mail, hiring-tool relays and addresses no person writes from (`noreply@`,
+`jobs@`, `talent@`, ...) never count. It returns `False` whenever it is unsure. `agency` has
+no default, on purpose: it is the only thing that separates a company's own recruiter from
+an agency filed under its own name.
 
 ---
 
@@ -237,7 +246,7 @@ has. The labels are a shortcut on the primary inbox, not a replacement for the r
 | `deadline` | Something has a clock: assessment expiry, incomplete application, scheduled interview | Gate |
 | `rejection` | `detect_rejection` finds language in the message's own text | Update a tracked row, silent. Never creates one |
 | `auto_ack` | "Thank you for applying", "we've received your application", Indeed/Workday/Greenhouse receipts | Update a tracked row. **Never create one** — untracked receipts are reported in Step 8, not written |
-| `recruiter_outreach` | A staffing/agency recruiter pitching a role the user never applied to | **Always** record the recruiter; job row and gate only if scored 60+ |
+| `recruiter_outreach` | A recruiter pitching a role the user never applied to, usually from an agency | **Always** record the recruiter; job row and gate if scored 60+ **or 1st party** |
 | `noise` | Job alerts, marketing, newsletters, Glassdoor/Dice/LinkedIn digests, security codes | Ignore entirely |
 
 **Identifying a human:** a named sender at a company domain, writing prose addressed to the user,
@@ -266,7 +275,32 @@ unsubscribe link, a tracking pixel, and a body that never references the user's 
 one of them, on mail pitching an unsolicited role, makes it `recruiter_outreach`.
 
 Two things override that and make it `human_action` — a reply within a thread the user started,
-and any request that names him specifically.
+and any request that names him specifically. A 1st-party pitch that names the user is still
+captured in Step 4: the category changes, the capture doesn't.
+
+### 1st-party senders go to the front of the line
+
+A **1st-party** sender works at the company the role is at: the company's own recruiter, or a
+hiring manager. Nearly everyone else who pitches a role is an agency (3rd party). 1st-party
+mail is the most direct line to an employer this inbox carries, so it is never left below a
+score bar.
+
+For every message from a human that is tied to a company, run
+`is_first_party(<From header>, <company as filed>, <agency as filed>)`, with the same
+`company` and `agency` Step 4 files. An agency hiding its client is filed under its own
+name, so its domain matches `company`: the filled `agency` is what stops it, and dropping
+that argument marks the agency 1st party.
+
+- **Email:** the function decides. Don't overrule a `False` by eye.
+- **LinkedIn** (`hit-reply@` / `inmail-hit-reply@`): there is no domain to check. It is 1st
+  party only when `agency` is blank **and** the signature or headline places the sender at
+  the hiring company ("Talent Acquisition at Acme", with the role at Acme). Never for an
+  undisclosed employer. When the signature doesn't say, it isn't.
+- **A pitch:** what decides is the `first_party` that `record_recruiter_outreach` returns in
+  Step 4, not this check. The row and the task then can't disagree.
+
+A 1st-party pitch for a role the user never applied to is always captured with
+`record_recruiter_outreach`, whatever its category, because the job row is part of the point.
 
 ---
 
@@ -367,11 +401,13 @@ same `message_id`:
 | `identity` | the sender address, or the **LinkedIn profile slug** |
 | `company` | the agency name when the employer is undisclosed (`Kastech SSG`) |
 | `position_title` | this role alone, never two joined by a slash |
-| `name`, `agency`, `email` | as signed |
+| `name`, `email` | as signed |
+| `agency` | the staffing firm, as signed. **Blank when the recruiter works for the hiring company.** Required for every agency, including when the employer is undisclosed: left blank there, the agency's own domain matches `company` and it is marked 1st party |
 | `account` | `primary`, or `alt` for the `{notify_email}` inbox |
 | `message_id`, `thread_id`, `subject` | from `scripts/read_mail.py` |
 | `notes` | the score and rationale, below |
-| `create_job_row` | `true` if the score clears 60, `false` otherwise — see below |
+| `create_job_row` | `true` if the score clears 60, `false` otherwise — see below. The tool forces it to `true` for a 1st-party recruiter |
+| `first_party` | `true` for a LinkedIn recruiter whose signature places them at the hiring company, with `agency` blank; otherwise omit. The tool checks email domains itself, and ignores this flag when `agency` is filled |
 
 When `create_job_row` is true it creates the job row at status `Tracking` with a deterministic
 synthetic link, so **re-processing the same email updates rather than duplicating** — and it
@@ -384,6 +420,8 @@ Call it for **every** recruiter-sourced role, whatever the score. Who is contact
 the thing the Recruiters card exists to show, and a cold blast still answers that.
 
 But only pass `create_job_row=true` when the score clears 60 — the same bar the gate uses.
+The exception is a 1st-party recruiter: the tool creates their row whatever the score, and
+says so with `first_party: true` in its result.
 InMail arrives at roughly 40 messages per six weeks, nearly all cold, and a row apiece buries
 the tracker in roles nobody is pursuing. For a sub-60 role, pass `create_job_row=false` — the
 recruiter and the message are recorded and stop there. (Before this parameter existed, every
@@ -428,7 +466,8 @@ Score each role and put `Match Score: X/100` plus a one-line rationale and the t
 **60 or above reaches the gate**; below that the row is written and nothing is surfaced. An
 Alibaba Cloud DevOps or embedded firmware pitch scores in the teens and stays silent, while a
 genuinely matched inbound role still gets its chance at a task. Anything already tracked is
-not re-scored.
+not re-scored. The exception is a 1st-party pitch: it reaches the gate whatever its score
+(Step 5), with the score in the task so a poor fit can be dismissed quickly.
 
 **Roles score individually; the thread produces at most one task.** Step 5 is the only thing
 that creates tasks, and its `thread:<id>` duplicate check already collapses several qualifying
@@ -445,7 +484,8 @@ and guessing either way is a silent wrong write.
 ## Step 5 — The gate, and the tasks that survive it
 
 Task list: `My Tasks`. **Every** candidate passes through this gate — `human_action`,
-`deadline`, `unsure`, and any `recruiter_outreach` scoring 60+. No category is exempt.
+`deadline`, `unsure`, and any `recruiter_outreach` scoring 60+ or from a 1st-party
+recruiter. No category is exempt: 1st-party pitches run a shorter gate (below), not none.
 
 The score and the gate answer different questions. The score asks *is this role worth the user's
 attention?* The gate asks *is the ball in the user's court right now?* A 72/100 role they have
@@ -478,6 +518,18 @@ because it ended badly, and "go and read this" is a wasted errand when the answe
 Only when the text genuinely is not available — Indeed's login-gated messages — does the
 "cannot read" rule apply.
 
+### 1st-party pitches run test 1 only
+
+A pitch whose `record_recruiter_outreach` call returned `first_party: true` (Step 4)
+skips the 60 bar and tests 2 and 3. A company's
+own recruiter writing about a role is worth an answer even when they phrase it as an FYI.
+Test 1 still applies: if the user spoke last, they are waiting on the recruiter and there is
+no task.
+
+Every other message from someone at the hiring company (an ongoing process, a hiring
+manager) runs the full gate. If it earns a task, that task is marked like any other
+1st-party task.
+
 ### Writing the task
 
 **Check for duplicates first.** Call `mcp__gtasks__list` and skip creation if an open task
@@ -494,6 +546,23 @@ what keeps re-runs clean.
 - **Notes** — `thread:<Thread ID>` on the first line, then sender name and address, a
   verbatim quote of what they asked, any link or portal URL, the tracker status, and whether
   the company is tracked at all.
+- **1st-party tasks** — when the sender is 1st party (for a pitch, the tool's
+  `first_party: true`; otherwise Step 3's check), put `★ DIRECT · ` in front of the title
+  and keep its verb: an `unsure` item stays `★ DIRECT · Check …`, never `Reply to`. The
+  task is due **today** (the day triage runs), which replaces the due rule above. The notes
+  carry a `direct:` line, plus `Match Score: X/100` for a pitch. For LinkedIn the line reads
+  `direct: LinkedIn, signature names <company>`.
+
+```
+★ DIRECT · Reply to Jane Doe (Acme) — interested in the Senior Frontend role?
+
+  thread:<Thread ID>
+  direct: acme.com matches Acme
+  from: Jane Doe <jane@acme.com>
+  Match Score: 48/100 — strong React fit; the role asks for 6+ years
+  asked: "Would you be open to a quick call this week?"
+  tracker: Tracking — row created by this run
+```
 
 ```
 Check JustPower LLC — outcome unknown, body behind a login
@@ -505,6 +574,22 @@ Check JustPower LLC — outcome unknown, body behind a login
 ```
 
 The notes are the point: the user should be able to act without going back to the inbox.
+
+### Front of the line
+
+Google Tasks puts each new task at the top of the list, so an ordinary task created later,
+in this run or the next, would bury a `★ DIRECT` one. Check the order on every run, even
+one that created no 1st-party task:
+
+1. After every task for this run is created, call `mcp__gtasks__list_with_tree` with
+   `taskListId: "@default"` (My Tasks). It lists in on-screen order.
+2. If every open `★ DIRECT` task already sits above every other open task, stop. Nothing
+   moves, which keeps a re-run at zero writes.
+3. Otherwise call `mcp__gtasks__move` with `taskListId: "@default"`, the task's id and no
+   `previous`, once per open `★ DIRECT` task, oldest due date first, so the newest ends on
+   top. `move` fails without `taskListId`.
+
+Moving is not completing or deleting, so "never destroy work" holds.
 
 ### Superseding a task the mail has overtaken
 
@@ -629,6 +714,7 @@ inbox-triage <date>
   human: <n>  deadline: <n>  rejection: <n>  auto_ack: <n>  outreach: <n>  noise: <n>
   gate: <n> passed, <n> stopped (no ask: <n>, sign-off: <n>, score < 60: <n>)
   recruiters: <n> seen (<n> new), <n> roles captured, <n> replies recorded
+  direct: <n> tasks, <n> recruiters flagged
   tracker: <n> updated, <n> created, <n> ambiguous (asked)
   untracked receipts: <n> not written — <company> (<role or "role not named">), …
   tasks: <n> created, <n> skipped as duplicates, <n> superseded

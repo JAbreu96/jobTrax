@@ -1571,6 +1571,9 @@ RECRUITER_COLUMNS = [
     # this export cannot reconstruct, since no message exists to re-derive them
     # from. Losing the flag would also lose which names are human-owned.
     "manual_entry",
+    # A LinkedIn recruiter's flag comes from their signature, not their
+    # address, so it can't be re-derived from mail either.
+    "first_party",
 ]
 
 RECRUITER_JOB_COLUMNS = [
@@ -1606,6 +1609,14 @@ def _ensure_recruiters_schema(conn: sqlite3.Connection) -> None:
     try:
         conn.execute(
             "ALTER TABLE recruiters ADD COLUMN manual_entry INTEGER NOT NULL DEFAULT 0"
+        )
+    except _SCHEMA_EXC:
+        pass  # column already exists
+    # Marks a recruiter who works at the hiring company, so triage can put
+    # them at the front of the line. Only ever turns on, like manual_entry.
+    try:
+        conn.execute(
+            "ALTER TABLE recruiters ADD COLUMN first_party INTEGER NOT NULL DEFAULT 0"
         )
     except _SCHEMA_EXC:
         pass  # column already exists
@@ -1650,7 +1661,8 @@ def recruiter_link(source: str, identity: str, position_title: str) -> str:
 
 def upsert_recruiter(source: str, identity: str, name: str = "", agency: str = "",
                      email: str = "", agency_domain: str = "", notes: str = "",
-                     seen_date: str = "", manual_entry: bool = False) -> int:
+                     seen_date: str = "", manual_entry: bool = False,
+                     first_party: bool = False) -> int:
     """
     Creates or updates one recruiter, returning its id.
 
@@ -1671,6 +1683,9 @@ def upsert_recruiter(source: str, identity: str, name: str = "", agency: str = "
 
     The flag only ever turns on (MAX), so a human correcting an auto-created
     recruiter keeps the protection from then on.
+
+    `first_party` marks a recruiter who works at the hiring company. It also
+    only ever turns on: a later message that doesn't say so must not clear it.
 
     A hand-added recruiter is keyed source='email' with their address as the
     identity, deliberately NOT a separate 'manual' source: UNIQUE(source,
@@ -1709,21 +1724,23 @@ def upsert_recruiter(source: str, identity: str, name: str = "", agency: str = "
                 "  agency_domain = COALESCE(NULLIF(?, ''), agency_domain), "
                 "  notes = COALESCE(NULLIF(?, ''), notes), "
                 "  last_seen = MAX(COALESCE(last_seen, ''), ?), "
-                "  manual_entry = MAX(manual_entry, ?) "
+                "  manual_entry = MAX(manual_entry, ?), "
+                "  first_party = MAX(first_party, ?) "
                 "WHERE id = ?",
                 (name, name, agency, agency, email, agency_domain, notes, seen,
-                 1 if manual_entry else 0, row["id"]),
+                 1 if manual_entry else 0, 1 if first_party else 0, row["id"]),
             )
             conn.commit()
             return row["id"]
 
         cur = conn.execute(
             "INSERT INTO recruiters (source, identity, email, name, agency, "
-            "agency_domain, first_seen, last_seen, notes, manual_entry) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "agency_domain, first_seen, last_seen, notes, manual_entry, "
+            "first_party) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (source, identity, email or None, name or None, agency or None,
              agency_domain or None, today, today, notes or None,
-             1 if manual_entry else 0),
+             1 if manual_entry else 0, 1 if first_party else 0),
         )
         conn.commit()
         return cur.lastrowid
