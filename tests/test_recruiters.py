@@ -183,6 +183,35 @@ def test_manual_entry_only_ever_turns_on(db):
     assert row["manual_entry"] == 1
 
 
+def test_first_party_defaults_off(db):
+    db.upsert_recruiter("email", "raj@staffco.com", agency="StaffCo")
+    assert db.get_recruiters()[0]["first_party"] == 0
+
+
+def test_first_party_only_ever_turns_on(db):
+    """A later message that doesn't say 1st party must not clear the flag."""
+    db.upsert_recruiter("email", "jane@acme.com", first_party=True)
+    db.upsert_recruiter("email", "jane@acme.com", first_party=False)
+    assert db.get_recruiters()[0]["first_party"] == 1
+
+
+def test_first_party_column_is_added_to_an_existing_table(db):
+    """The live database already has a recruiters table; the column arrives by ALTER."""
+    conn = sqlite3.connect(db.DB_PATH)
+    conn.execute(db._RECRUITERS_DDL)          # the pre-column shape
+    conn.execute("INSERT INTO recruiters (source, identity, first_seen) "
+                 "VALUES ('email', 'jane@acme.com', '2026-11-01')")
+    conn.commit()
+    conn.close()
+    db.upsert_recruiter("email", "jane@acme.com", first_party=True)
+    assert db.get_recruiters()[0]["first_party"] == 1
+
+
+def test_first_party_is_exported(db):
+    """A LinkedIn recruiter's flag can't be rebuilt from mail, so the backup carries it."""
+    assert "first_party" in db.RECRUITER_COLUMNS
+
+
 def test_update_recruiter_can_clear_a_field(db):
     """A human blanking a wrong agency means it; a parser yielding "" does not."""
     rid = db.upsert_recruiter("email", "jo@agency.com", name="Jo",
